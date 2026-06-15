@@ -1,0 +1,16 @@
+# Config for the CP3->CP4->CP5 thin-slice exercise (2026-05-31 audit, item 3).
+# This project exists only to drive the back-half agents (results_validator,
+# paper_writer, peer_reviewer, repo_publisher) end-to-end on a CANNED payload of
+# the real pneumonia E0/E1/E2 numbers, so the four never-run agents execute for
+# a few dollars. It is non-destructive: a side-by-side project_id that shares no
+# state with pneumonia-data-efficiency.
+
+[project]
+id = "pneumonia-backhalf-slice"
+description = "Thin vertical slice to exercise CP4/CP5 + the four never-run agents."
+
+[budget]
+# Hard safety net for this exercise. The router enforces this per-project soft
+# cap (clients/router.py -> budget.assert_project_budget) in addition to the
+# global monthly cap. Keeps the slice bounded to a few dollars.
+project_soft_cap_usd = 12.0

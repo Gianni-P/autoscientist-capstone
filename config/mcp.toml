@@ -1,0 +1,68 @@
+# config/mcp.toml
+# Model Context Protocol servers autoscientist can connect to.
+#
+# Only agents that declare `mcp_servers` (see src/autoscientist/agents/) use
+# these. Loaded by runtime/config.py into Config.mcp; connected lazily by
+# tools/mcp_integration.py right before an agent's tool-use loop. If a server
+# can't be reached at run time (missing token, Docker down, network down) the
+# runner logs it and the agent proceeds with its native tools only.
+
+[servers.github]
+# The official GitHub MCP server (github/github-mcp-server). repo_publisher uses
+# it to create a repository and push the curated release tree to GitHub — the
+# third deliverable from KICKOFF.md §1 ("a reproducible code/data repository").
+enabled = true
+# "http"  -> remote hosted server (no Docker; needs a PAT + network). DEFAULT,
+#            because this operator's user is not in the `docker` group.
+# "stdio" -> local Docker container (see [servers.github.stdio] for the one-time
+#            setup). Switch transports by changing this single line.
+transport = "http"
+tool_prefix = "github_"
+# Capability restriction: only these (unprefixed) server tool names are exposed
+# to the agent. Unknown names here are ignored; the agent's own `tools` tuple is
+# the final gate. Keep this tight — the server offers ~80 tools by default.
+# NB: the GitHub MCP server has NO create-release/tag tool (release tools are
+# read-only), so publishing stops at "repo created + files pushed"; tagging a
+# release is a documented manual step (gh CLI / REST API).
+# Exactly the tools repo_publisher's AGENT.tools declares — keep these in sync.
+# NB: the live remote server (api.githubcopilot.com/mcp/) exposes only the
+# 'repos' toolset and has NO get_me — the owner is read from create_repository's
+# response instead, so get_me is not needed.
+allowed_tools = [
+    "create_repository",
+    "push_files",
+    "create_or_update_file",
+]
+call_timeout_s = 180
+startup_timeout_s = 60
+
+[servers.github.http]
+# Remote GitHub MCP server (Streamable HTTP transport). The PAT is sent as a
+# Bearer token. Use a fine-grained PAT scoped to the repos you want published
+# (Administration: read/write to create repos, Contents: read/write to push).
+url = "https://api.githubcopilot.com/mcp/"
+token_env = "GITHUB_PERSONAL_ACCESS_TOKEN"
+auth_header = "Authorization"
+auth_value = "Bearer {token}"
+
+[servers.github.http.extra_headers]
+# Scope the remote server to just the toolset repo_publisher needs: repos
+# (create_repository + push_files + create_or_update_file).
+"X-MCP-Toolsets" = "repos"
+
+[servers.github.stdio]
+# Local alternative to the remote server. Requires Docker reachable WITHOUT
+# sudo. One-time setup on this host:
+#     sudo usermod -aG docker $USER
+#     wsl.exe --shutdown            # from Windows, then reopen WSL
+# The container reads the PAT from the env var passed via `-e` below.
+command = "docker"
+args = [
+    "run", "-i", "--rm",
+    "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+    "-e", "GITHUB_TOOLSETS",
+    "ghcr.io/github/github-mcp-server",
+]
+token_env = "GITHUB_PERSONAL_ACCESS_TOKEN"
+env_passthrough = ["PATH", "HOME"]
+toolsets = "repos"   # exported to the container as GITHUB_TOOLSETS

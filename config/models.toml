@@ -1,0 +1,268 @@
+# config/models.toml
+# Model routing for autoscientist agents. Resolved at runtime by clients/router.py.
+#
+# Two-layer indirection: agents -> model alias -> provider. The indirection lets
+# operators retarget many agents at once (e.g. swap `claude_sonnet` to point at
+# claude-opus for a hard project) without editing every agent entry.
+
+#
+# Provider definitions
+#
+[providers.claude]
+type = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.ollama]
+type = "openai_compat"
+base_url_env = "OLLAMA_BASE_URL"
+base_url_default = "http://localhost:11434/v1"
+api_key = "ollama"  # placeholder; Ollama ignores it but the OpenAI SDK requires non-empty
+
+[providers.mock]
+# Deterministic in-process provider for Phase 1 stub agents.
+# Real agents (Phase 2+) never use this.
+type = "mock"
+
+#
+# Model aliases.
+# Pricing values are approximate USD per million tokens; see
+# https://www.anthropic.com/pricing for current numbers. Used only by the
+# budget *estimator*. Final accounting uses the `usage` field returned by
+# the API, so estimator drift is bounded by the per-call cost ceiling.
+#
+[models.claude_sonnet]
+provider = "claude"
+model_id = "claude-sonnet-4-6"
+prompt_usd_per_mtok = 3.0
+output_usd_per_mtok = 15.0
+default_max_tokens = 4096
+
+[models.claude_haiku]
+provider = "claude"
+model_id = "claude-haiku-4-5-20251001"
+prompt_usd_per_mtok = 1.0
+output_usd_per_mtok = 5.0
+default_max_tokens = 4096
+
+[models.claude_opus]
+# Opt-in only. Not in the default routing per KICKOFF.md §6.
+provider = "claude"
+model_id = "claude-opus-4-7"
+prompt_usd_per_mtok = 15.0
+output_usd_per_mtok = 75.0
+default_max_tokens = 4096
+# This Opus model rejects the `temperature` parameter ("temperature is
+# deprecated for this model", HTTP 400). Surfaced 2026-05-31 when paper_writer
+# (the only opus-routed agent) ran for the first time and crashed. The router
+# drops temperature for models with supports_temperature=false; claude.py also
+# self-heals defensively. Default for all other models is true.
+supports_temperature = false
+
+[models.qwen_27b]
+# qwen3.6:27b is a thinking model; chain-of-thought is emitted on a
+# separate `reasoning` field via the OpenAI-compat shim. With no_think=true
+# the client appends "/no_think" to the system prompt to suppress reasoning
+# and keep token budgets predictable.
+provider = "ollama"
+model_id = "qwen3.6:27b"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 8192
+no_think = true
+
+[models.qwen_27b_thinking]
+provider = "ollama"
+model_id = "qwen3.6:27b"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 65536
+no_think = false
+
+[models.qwen25_coder]
+# qwen2.5:32b — the local tool-calling workhorse for code_gen/test_gen.
+# Chosen over qwen3.6:27b for the agentic code loop after the 2026-05-31
+# audit: a verified round-trip through clients/ollama.py
+# (scripts/smoke_local_toolcall.py) showed qwen2.5:32b emits clean OpenAI
+# tool_calls with *zero* reasoning tokens (finish_reason=tool_calls,
+# reasoning_chars=0), whereas qwen3.6:27b — a thinking model — still spends
+# ~100-260 reasoning tokens per call even under /no_think and is prone to the
+# planning-oscillation the shim has to detect and retry around. For the two
+# highest-volume agents that closes the agentic loop locally for $0 instead of
+# paying Claude prices (test_gen alone was 62% of lifetime spend). Both Qwen
+# models tool-call correctly; this is the cheaper, more predictable default.
+provider = "ollama"
+model_id = "qwen2.5:32b"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 8192
+no_think = true  # qwen2.5 is not a thinking model; flag is a harmless no-op
+
+[models.qwen3_coder]
+# qwen3-coder:30b (Qwen3-Coder-30B-A3B, q4_K_M, ~19 GB) — the intended
+# successor to qwen25_coder for the code_gen/test_gen agentic loop. A coder-
+# tuned MoE (30B total, ~3B active): runs at ~3B speed but reasons near 30B.
+# Unlike qwen3.6:27b it is the *non-thinking* Coder/Instruct variant with
+# native function-calling, so it avoids the reasoning-token waste and
+# planning-oscillation that ruled qwen3.6:27b out for the tool loop (see the
+# qwen25_coder note). Fits the 32 GB RTX 5090 with ~11 GB left for KV cache.
+# NOT YET LIVE: code_gen/test_gen are repointed here (below) only after the
+# model is pulled AND scripts/smoke_local_toolcall.py confirms clean tool_calls.
+provider = "ollama"
+# 2026-06-11: was "qwen3-coder:30b". Switched to the 64k-context variant built
+# from config/qwen3-coder-64k.Modelfile (`ollama create qwen3-coder-30b-64k`).
+# The stock model loads at num_ctx=32768 (server default; /v1 ignores per-request
+# num_ctx), which code_gen's debug loop FILLED -> the final turn truncated
+# (finish_reason="length", ~23 tokens) -> no HANDOFF emitted -> runner marked the
+# run "completed" with 0 handoffs (empty console). Run run_f6fb98…, 2026-06-11.
+# The 64k variant loads at 25 GB / 100% GPU on the 5090 (verified via `ollama ps`).
+# Revert: restore model_id = "qwen3-coder:30b".
+model_id = "qwen3-coder-30b-64k"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+# 2026-06-11: raised 8192 -> 16384. Per-call OUTPUT cap (num_predict). 8192 was
+# NOT hit in the successful run (code_gen + test_gen both handed off cleanly),
+# but this gives Qwen room to emit a large file in one write_file call without
+# truncation (finish_reason="length" in the JSONL would flag a real hit). Local
+# => $0; only costs more KV cache (the 5090 has ~11 GB free). NOTE: this is the
+# output length only — NOT the context window (num_ctx, Ollama-side) nor the
+# per-call HTTP timeout (clients/ollama.py _get_client timeout=180s). Raise the
+# 180s timeout too if a single generation ever exceeds it.
+default_max_tokens = 16384
+no_think = true  # non-thinking coder model; flag is a harmless no-op (as with qwen2.5)
+
+[models.mock_stub]
+# Used by Phase 1 stub agents (echo, handoff). No network, deterministic.
+provider = "mock"
+model_id = "mock-stub"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 256
+
+#
+# Agent -> model routing.
+# `cost_ceiling_usd` refuses a single call whose estimated cost would exceed it.
+#
+[agents.lit_review]
+model = "claude_haiku"
+cost_ceiling_usd = 0.50
+
+[agents.idea_gen]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+
+[agents.idea_critic]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+
+[agents.methodology]
+model = "claude_sonnet"
+cost_ceiling_usd = 2.00
+
+[agents.code_gen]
+# 2026-06-12: switched qwen3_coder -> claude_sonnet. The local 30B kept emitting
+# internally-inconsistent modules (importing names it never defined -> ImportError),
+# which never converged and burned all 3 code_review cycles (~$4.66/run, mostly
+# Sonnet input) on code that didn't even import. Cost model (run_bb0e8963): the
+# entire code_gen+test_gen workload is only ~$0.5/run priced at Sonnet, vs the ~$3
+# of wasted review cycles the bad local output caused — so cloud generation is net
+# CHEAPER and actually converges. Revert to "qwen3_coder" (still defined) for local
+# $0 generation. code_gen has no `execute` tool, so it can't debug-spin on Sonnet.
+model = "claude_sonnet"
+cost_ceiling_usd = 3.00
+# 2026-06-11: raised 12 -> 30. The first qwen3-coder regen run hit the 12-round
+# cap mid-debug (write_file/execute self-test loop), emitted NO HANDOFF, and the
+# runner treated that as terminal -> run "completed" after code_gen with 0
+# handoffs (never reached test_gen/CP3 -> empty operator console). qwen3-coder
+# self-tests more aggressively than qwen2.5 did, so it needs more rounds. The
+# cap is a ceiling, not a fixed cost (the loop exits the moment the agent hands
+# off) and the model is local ($0), so a higher cap only helps the cut-off case.
+max_tool_rounds = 30
+invocation_ceiling_usd = 4.00  # cumulative across the round loop (backstop if rerouted to Claude)
+
+[agents.test_gen]
+# 2026-06-12: switched qwen3_coder -> claude_sonnet alongside code_gen (see the
+# code_gen note above for the cost rationale). Sonnet writes tests that match the
+# source API it just generated, so the code<->review loop can actually converge.
+# Revert to "qwen3_coder" (still defined) for local $0 generation.
+model = "claude_sonnet"
+cost_ceiling_usd = 2.00
+# Lowered 8 -> 4 (2026-05-31 audit) WHEN test_gen ran on Claude and was 62% of
+# lifetime spend. That cost rationale is now MOOT: test_gen routes to local
+# qwen3-coder ($0). 2026-06-11: raised 4 -> 15 so the local model has room to
+# write tests AND emit its HANDOFF before the cap — a 4-round cap would starve
+# it the same way code_gen's 12 did. Still a ceiling; the loop exits on handoff.
+max_tool_rounds = 15
+invocation_ceiling_usd = 3.00  # cumulative across the round loop (backstop if rerouted to Claude)
+
+[agents.code_review]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+invocation_ceiling_usd = 3.00  # cumulative; code_review was 21% of lifetime spend
+
+[agents.results_validator]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+invocation_ceiling_usd = 3.00  # cumulative across the round loop
+
+[agents.paper_writer]
+model = "claude_opus"
+cost_ceiling_usd = 5.00
+# Higher cumulative ceiling: opus + multi-round drafting (literature lookups,
+# citation checks, latex compile retries) legitimately costs more per invocation.
+invocation_ceiling_usd = 12.00
+
+[agents.peer_reviewer]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+
+[agents.repo_publisher]
+# Writes the curated release tree under projects/<id>/release/. Mostly
+# mechanical I/O (read sandbox file -> write release file) but the
+# READMEs / docstrings benefit from Sonnet-quality writing. Higher
+# cost_ceiling than peer_reviewer because the agent may make many
+# write_release_file calls in a single invocation.
+model = "claude_sonnet"
+cost_ceiling_usd = 3.00
+max_tool_rounds = 40
+invocation_ceiling_usd = 10.00  # many write_release_file rounds; sonnet-priced
+
+# Phase 1 stub agents — used by smoke_phase1 to exercise the runtime
+# without spending money or hitting the GPU. The mock provider returns
+# deterministic responses keyed by agent name.
+[agents.echo]
+model = "mock_stub"
+cost_ceiling_usd = 0.0
+
+[agents.handoff]
+model = "mock_stub"
+cost_ceiling_usd = 0.0
+
+# Phase 6 — autoresearch / prompt optimization.
+# `judge` scores agent outputs against per-agent rubrics (KICKOFF.md §9).
+# `meta_prompter` reads low-scoring traces and proposes prompt variants.
+# Both default to claude_sonnet; cost ceilings are tighter because each
+# call processes one anchor at a time (judge) or one prompt rewrite
+# (meta_prompter) — no long-context payloads expected.
+[agents.judge]
+model = "claude_sonnet"
+cost_ceiling_usd = 0.50
+
+[agents.meta_prompter]
+model = "claude_sonnet"
+cost_ceiling_usd = 1.00
+
+#
+# Budget — global cap, enforced by runtime/budget.py.
+# `hard_floor_buffer_usd` is the amount left below the cap before all
+# new spend is refused (KICKOFF.md §2: refuse within $5 of the cap).
+#
+[budget]
+monthly_cap_usd = 150.0
+hard_floor_buffer_usd = 5.0
+# Cumulative USD ceiling for a SINGLE agent invocation's tool-loop (the sum
+# of all rounds), enforced in runtime/runner.py:_invoke_agent. This is the
+# layer the 2026-05-31 audit found missing: cost_ceiling_usd bounds ONE call,
+# the monthly cap bounds the whole month, but nothing bounded a loop of
+# individually-cheap calls that summed to $16+. Per-agent overrides below.
+# 0 disables it. The monthly hard cap above is always the final gate.
+default_invocation_ceiling_usd = 10.0

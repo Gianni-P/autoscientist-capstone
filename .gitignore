@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs / uv
+.venv/
+.python-version
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local config
+# Ignore .env, .env.save, .env.local, etc. but keep the documented template.
+.env
+.env.*
+!.env.example
+*.local.toml
+.claude/settings.local.json
+
+# SQLite (project state)
+*.db
+*.db-shm
+*.db-wal
+
+# Run artifacts
+runs/
+runs_*/
+*.log
+*.jsonl
+
+# Large / reproducible data kept OUT of git (backed up or re-fetchable elsewhere).
+# /data is a symlink to the 100GB+ dataset store; backups/ holds local DB
+# snapshots (the DB is the experimental record — back it up separately);
+# messages_dump.txt is a large local debug dump.
+/data
+backups/
+messages_dump.txt
+projects_smoke_*/
+
+# Project-scoped artifacts (fetched datasets, sandbox outputs, generated PDFs).
+# The small per-project metadata (kickoff_payload.json, config.toml, README.md,
+# STATE_OF_PLAY.md, paper/, release/) is intentionally kept and committed.
+projects/*/sandbox/
+projects/*/data/
+projects/*/datasets/
+projects/*/exec_logs/
+projects/*/phase8_artifacts/
+projects/*/figures/
+projects/*/cache/
+projects/*/build/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

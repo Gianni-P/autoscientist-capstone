@@ -1,0 +1,134 @@
+cff-version: 1.2.0
+message: "If you use this software or results, please cite it as below."
+type: software
+title: >-
+  Training-Set Size and Cross-Institutional Generalization of CNN Pneumonia
+  Detection: An NIH ChestX-ray14 → PadChest Study
+year: 2024
+license: MIT
+
+# NOTE: Author list is not specified in the paper draft; update before publication.
+authors:
+  - name: "The Authors"
+
+# Verified references (citation_check round-trip passed):
+references:
+  - type: article
+    authors:
+      - family-names: Rajpurkar
+        given-names: Pranav
+      - family-names: Irvin
+        given-names: Jeremy
+      - family-names: Zhu
+        given-names: Kaylie
+      - family-names: Yang
+        given-names: Brandon
+      - family-names: Mehta
+        given-names: Hershel
+      - family-names: Duan
+        given-names: Tony
+      - family-names: Ding
+        given-names: Daisy Yi
+      - family-names: Bagul
+        given-names: Aarti
+      - family-names: Langlotz
+        given-names: Curtis P.
+      - family-names: Shpanskaya
+        given-names: Katie
+      - family-names: Lungren
+        given-names: Matthew P.
+      - family-names: Ng
+        given-names: Andrew Y.
+    title: "CheXNet: Radiologist-Level Pneumonia Detection on Chest X-Rays with Deep Learning"
+    year: 2017
+    doi: 10.48550/arxiv.1711.05225
+    notes: "Verified via citation_check (openalex). AUROC=0.768 baseline cited for
+      sanity-check only; not directly comparable (DenseNet-121, different split)."
+
+  - type: conference-paper
+    authors:
+      - family-names: Wang
+        given-names: Xiaosong
+      - family-names: Peng
+        given-names: Yifan
+      - family-names: Lu
+        given-names: Le
+      - family-names: Lu
+        given-names: Zhiyong
+      - family-names: Bagheri
+        given-names: M.
+      - family-names: Summers
+        given-names: Ronald M.
+    title: >-
+      ChestX-Ray8: Hospital-Scale Chest X-Ray Database and Benchmarks on
+      Weakly-Supervised Classification and Localization of Common Thorax Diseases
+    year: 2017
+    doi: 10.1109/CVPR.2017.369
+    notes: "Verified via citation_check (semantic_scholar). Full canonical title used."
+
+  - type: conference-paper
+    authors:
+      - family-names: He
+        given-names: Kaiming
+      - family-names: Zhang
+        given-names: Xiangyu
+      - family-names: Ren
+        given-names: Shaoqing
+      - family-names: Sun
+        given-names: Jian
+    title: "Deep Residual Learning for Image Recognition"
+    year: 2016
+    doi: 10.1109/CVPR.2016.90
+    notes: "Verified via citation_check (semantic_scholar)."
+
+  - type: article
+    authors:
+      - family-names: Bustos
+        given-names: A.
+      - family-names: Pertusa
+        given-names: A.
+      - family-names: Salinas
+        given-names: J. M.
+      - family-names: "de la Iglesia-Vaya"
+        given-names: M.
+    title: "PadChest: A large chest x-ray image dataset with multi-label annotated reports"
+    year: 2020
+    doi: 10.1016/j.media.2020.101797
+    notes: "Verified via citation_check (semantic_scholar)."
+
+  - type: conference-paper
+    authors:
+      - family-names: Pooch
+        given-names: Eduardo
+      - family-names: Ballester
+        given-names: Pedro L.
+      - family-names: Barros
+        given-names: Rodrigo C.
+    title: >-
+      Can We Trust Deep Learning Based Diagnosis? The Impact of Domain Shift in
+      Chest Radiograph Classification
+    year: 2020
+    doi: 10.1007/978-3-030-62469-9_7
+    notes: "Verified via citation_check (openalex)."
+
+  - type: article
+    authors:
+      - family-names: Cohen
+        given-names: Joseph
+      - family-names: Hashir
+        given-names: Mohammad
+      - family-names: Brooks
+        given-names: Rupert
+      - family-names: Bertrand
+        given-names: Hadrien
+    title: "On the limits of cross-domain generalization in automated X-ray prediction"
+    year: 2020
+    doi: 10.48550/arxiv.2002.02497
+    notes: "Verified via citation_check (openalex)."
+
+# PENDING — NOT VERIFIED:
+# Zech et al. 2018, "Variable generalization performance of a deep learning model
+# to detect pneumonia from chest radiographs", PLOS Medicine 15(11):e1002686.
+# The DOI 10.1371/journal.pmed.1002686 resolves to a different paper in the
+# literature APIs (Rajpurkar et al. CheXNeXt). Authors must manually verify
+# the correct DOI before adding this entry. See README.md §Pending citations.

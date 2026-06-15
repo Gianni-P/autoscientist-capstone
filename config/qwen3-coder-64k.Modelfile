@@ -1,0 +1,22 @@
+# Derived from qwen3-coder:30b with an enlarged context window.
+#
+# WHY: the stock Ollama server default (OLLAMA_CONTEXT_LENGTH) resolved to
+# 32768 at runtime (confirmed via `ollama ps`), and code_gen's iterative
+# debug loop accumulated enough file/test context to FILL 32768 tokens. Once
+# the context is full, Ollama truncates the final generation
+# (finish_reason="length", ~23 tokens), so the agent can't emit its HANDOFF
+# -> the runner sees no handoff -> marks the run "completed" with 0 handoffs
+# -> empty operator console. (Run run_f6fb98…, 2026-06-11.)
+#
+# Ollama's OpenAI-compat /v1 endpoint — which clients/ollama.py uses — IGNORES
+# a per-request options.num_ctx (verified: requesting 65536 still loaded
+# 32768). The ONLY reliable way to enlarge the window without restarting the
+# server is a Modelfile PARAMETER, which is always honored. 65536 fits the
+# 32 GB RTX 5090 (32768 loaded at 22 GB / 100% GPU; 64k adds a few GB of KV
+# cache). All other params (template, stop tokens, temperature) are inherited
+# from the base model via FROM.
+#
+# Build:   ollama create qwen3-coder-30b-64k -f config/qwen3-coder-64k.Modelfile
+# Revert:  point [models.qwen3_coder].model_id back to "qwen3-coder:30b".
+FROM qwen3-coder:30b
+PARAMETER num_ctx 65536

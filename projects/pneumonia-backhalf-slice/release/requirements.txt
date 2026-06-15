@@ -1,0 +1,8 @@
+# Pinned dependencies as observed in the sandbox.
+# Install with: pip install -r requirements.txt
+torch==2.4.0
+torchvision==0.19.0
+scikit-learn==1.5.1
+numpy==2.1.0
+pandas==2.2.2
+pillow==10.4.0

@@ -1,0 +1,24 @@
+# config/default.toml
+# Runtime defaults for autoscientist. Override per-project as needed.
+# Phase 1 only consumes the [paths], [logging], and [runtime] sections.
+
+[paths]
+db_path = "autoscientist.db"
+runs_dir = "runs"
+projects_dir = "projects"
+prompts_dir = "prompts"
+domain_configs_dir = "config/domains"
+
+[logging]
+level = "INFO"
+jsonl_dir = "runs/{run_id}/logs"
+console = true
+
+[runtime]
+default_max_handoffs = 50
+handoff_timeout_seconds = 600
+# Cap on how many times code_review may fire in a single _drive_loop pass
+# before the runner forces a CP3 gate. The Nth code_review's revise verdict
+# pauses the run with extra.loop_cap_exceeded=true; the operator can then
+# advance, modify, or reject. Env override: AUTOSCIENTIST_MAX_CODE_REVIEW_CYCLES.
+max_code_review_cycles = 3

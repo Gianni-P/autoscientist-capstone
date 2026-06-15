@@ -1,0 +1,33 @@
+{
+  "direction": "Reframe the undergraduate 'Limited Descent' project (Math 693A) as a well-posed constrained path-finding problem and ask: does the original ad-hoc 'rotate the travel direction clockwise/counter-clockwise until the next step is walkable' heuristic actually approach the constrained shortest safe descent path, or merely a feasible-but-arbitrary one? The original method takes fixed-step steepest descent over an analytic terrain f(x,y) and, whenever a step would drop more steeply than a maximum grade theta (5 degrees), rotates the direction in 1-degree increments until the drop is <= l*tan(theta). Its own Discussion identified the fatal confound: the clockwise, counter-clockwise, and either-rotation strategies each converge to a DIFFERENT endpoint, so comparing their total path lengths is ill-posed. Fix that confound by giving the objective a single defined target (a sink/basin representing the trailhead or road) so all strategies descend to the same point and path lengths become comparable. Then compare three schemes - (a) the original rotation heuristic, (b) a principled projection of the gradient onto the boundary of the feasible descent cone (equivalently, an exact-theta directional step), and (c) unconstrained fixed-step steepest descent - against a ground-truth optimum computed by a grid shortest-safe-path (Dijkstra/A*) under the SAME grade constraint. Evaluate over several analytic terrain functions and >= 5 initial points (injured-hiker locations) per terrain, reporting: feasibility (max-grade constraint satisfied at EVERY step), total 3-D path length, optimality gap versus the grid optimum, and convergence (iterations to reach the target, with a bounded rotation loop). Report mean +/- SD over initial points and bootstrap 95% confidence intervals for any cross-strategy comparison. The headline output is the optimality gap of the rotation heuristic versus the constrained optimum, and whether the clockwise/counter-clockwise asymmetry is a real effect or an artifact of the original's undefined endpoint - explicitly admitting the likely outcome that the heuristic is feasible but far from optimal, which is a legitimate negative/limitation result.",
+  "context": {
+    "domain": "numerical_optimization",
+    "task": "constrained_safe_descent_path_finding_on_analytic_terrain",
+    "origin": "Reworking of 'Limited Descent: The Use of Gradient Descent in Mountain Rescue' by Gianni Pucillo (Math 693A final). Original PDF: C:/Users/gdp/Downloads/Math 693A Final.pdf.",
+    "constraints": {
+      "compute": "Pure CPU, NumPy/SciPy only. No GPU, no external data, no network. Every objective is a closed-form analytic function evaluated in-sandbox; a full sweep targets < 15 minutes wall-clock.",
+      "no_external_datasets": "Terrains are analytic objective functions (sums of Gaussians / quadratic basins at specified peak and sink locations). DO NOT call the dataset_fetch tool; there is nothing to fetch.",
+      "methods": ["rotation_heuristic", "feasible_cone_projection", "unconstrained_steepest_descent"],
+      "reference_optimum": "grid_dijkstra_safe_shortest_path",
+      "terrains": ["mountain_one", "mountain_two", "sink_augmented_variants"],
+      "max_grade_degrees": 5,
+      "step_length": 0.1,
+      "rotation_increment_degrees": 1,
+      "n_initial_points": 5,
+      "primary_metrics": ["feasibility", "path_length", "optimality_gap", "convergence_iters"],
+      "gradient_validation": "finite_difference",
+      "max_runtime_minutes": 15
+    },
+    "ceiling": "Workshop track / short methods note (a numerical-optimization reproducibility-and-correction note built on an undergraduate project). Not a flagship-venue result. Per KICKOFF.md Section 1.",
+    "hard_rules": [
+      "feasibility is the primary correctness gate: the produced path must satisfy the descent-grade constraint (drop <= l*tan(theta)) at EVERY step; a path that violates its own constraint anywhere is invalid regardless of length",
+      "the rotation loop MUST be bounded by a turn cap (the original appendix code has an unbounded inner while-loop that can spin forever on a cliff face); the outer scheme MUST have a max-iteration budget and report convergence",
+      "the objective MUST have a single defined convergence target (sink) so all strategies descend to the same endpoint; path lengths are only compared across strategies that share that target",
+      "validate every analytic gradient against finite differences (or use autodiff) before trusting any descent result",
+      ">= 5 initial points per terrain with mean +/- SD reported, and bootstrap 95% confidence intervals for any cross-strategy comparison",
+      "reproduce a reference optimum (grid shortest-safe-path under the same grade constraint) before making ANY optimality / 'shorter path' claim, and report the optimality gap, not just raw path length",
+      "flag the clockwise-vs-counter-clockwise asymmetry as a counterintuitive finding requiring interpretation: decide whether it is a real effect or an artifact of the original's undefined endpoint",
+      "report path-length and feasibility sensitivity to the discretization choices (step length 0.1, rotation increment 1 degree) before claiming a 'near-continuous' path"
+    ]
+  }
+}

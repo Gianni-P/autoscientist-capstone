@@ -1,0 +1,60 @@
+# Per-project configuration for clinical-risk-tabular.
+#
+# A deliberately FAST project: tabular clinical-risk prediction with sklearn
+# models (logistic regression, random forest, hist-gradient-boosting). A full
+# sweep (datasets x models x training-sizes x seeds x folds) targets < 45 min
+# wall-clock on CPU — no GPU required. The point is to let the autonomous
+# chain actually reach checkpoints 3, 4, and 5 (preliminary results, full
+# results, draft review), which no run has done before (see ASSESSMENT_2026-05-29.md).
+#
+# The runtime layers this on top of config/default.toml and config/models.toml.
+# Anything omitted falls back to the defaults.
+
+[project]
+id = "clinical-risk-tabular"
+domain = "clinical_tabular"
+description = "Does model flexibility (GBM/RF) beat regularized logistic regression for tabular clinical risk once calibration — not just AUROC — is scored, and how does that depend on training-set size?"
+kickoff_payload_path = "projects/clinical-risk-tabular/kickoff_payload.json"
+
+[budget]
+# Per-project soft cap, enforced by router.py via assert_project_budget
+# (separate from, and in addition to, the monthly hard cap). Set lower than
+# the imaging project because the generated code surface is simpler.
+# CAVEAT: the test_gen per-invocation cost runaway (ASSESSMENT R2) is still
+# unfixed; this soft cap is the current backstop. Apply the per-invocation
+# cap before a long unattended run.
+project_soft_cap_usd = 20.0
+
+[verify]
+# Pitfall domain to run during stage-3 / stage-4 verification.
+domain = "clinical_tabular"
+
+[datasets]
+# Whitelist so the methodology agent doesn't invent an un-fetchable dataset.
+# All are small public tabular sets fetched IN-SANDBOX via sklearn/OpenML or a
+# direct CSV — NOT via the dataset_fetch tool (that registry is for the large
+# NIH/PadChest imaging archives only). See README for suggested sources.
+allowed = ["support2", "diabetes_130", "heart_disease_uci"]
+
+[experiment.defaults]
+# Defaults the methodology agent should anchor on unless it argues otherwise.
+models = ["logistic_regression_l2", "random_forest", "hist_gradient_boosting"]
+training_sizes = [500, 2000, 8000, "full"]
+n_seeds = 5
+cv_folds = 5
+primary_metrics = ["auroc", "auprc"]
+calibration_metrics = ["ece", "brier", "calibration_slope"]
+hyperparameter_tuning_split = "validation"
+external_validation = "held_out_shifted_subgroup"
+max_runtime_minutes = 45
+
+[checkpoints]
+# All five HITL checkpoints are mandatory; the runtime enforces this.
+# This project is specifically intended to be the first to exercise CP3-CP5.
+mandatory = [
+    "idea_selection",
+    "methodology_approval",
+    "preliminary_review",
+    "full_results_validation",
+    "draft_review",
+]

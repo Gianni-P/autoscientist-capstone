@@ -1,0 +1,154 @@
+# config/domains/numerical_optimization.toml
+# Pitfall checklist for constrained-descent / path-finding optimization projects.
+#
+# Phase 5 (verify/pitfalls.py) consumes this file and runs each check against
+# pipeline state. This is the seed list for the `numerical_optimization`
+# domain — the optimization counterpart to medical_imaging.toml /
+# clinical_tabular.toml. Every Pass / Fail / Needs-human verdict is keyed by `id`,
+# and each `id` must map to a handler registered in verify/pitfalls.py (an
+# unregistered id returns `skipped` so the operator sees the gap).
+#
+# Severity:
+#   "fail"         — blocks the pipeline; raises a hard halt + checkpoint.
+#   "needs_human"  — surfaces a checkpoint without halting downstream work.
+#   "warn"         — annotates the run; pipeline continues.
+#
+# These checks emphasize the failure modes that actually sink a constrained
+# descent / safe-path study — and specifically the ones the original
+# "Limited Descent" project either hit or flagged in its own Discussion:
+# a path that silently violates its own slope constraint, a rotation loop
+# that never terminates, comparing path lengths across runs that converge to
+# DIFFERENT endpoints, and calling a heuristic "optimal" with no optimum to
+# compare against.
+
+# --- Optimization-specific handlers (registered in verify/pitfalls.py) ---
+
+[[checks]]
+id = "constraint_feasibility_verified"
+title = "Constraint satisfied at every step of the produced path"
+severity = "fail"
+description = """
+The central guarantee of a constrained-descent scheme. The produced path
+must satisfy the declared constraint (descent grade <= theta, i.e. drop
+<= l*tan(theta)) at EVERY step, not just on average. A path that violates
+its own constraint anywhere is invalid regardless of how short it is — for
+the mountain-rescue framing, a single over-steep step is the cliff you were
+trying to avoid. Reads `constraint_satisfied` / `constraint_violations`.
+"""
+
+[[checks]]
+id = "descent_terminates"
+title = "Rotation loop bounded and scheme provably terminates"
+severity = "fail"
+description = """
+A direction-rotating descent has two non-termination risks. (1) The inner
+"rotate until walkable" loop can spin forever on a steep face if no turn cap
+is imposed — the original appendix code has an unbounded inner while-loop.
+(2) The outer scheme can iterate without ever reaching the target. The run
+must declare a bounded rotation turn cap, a max-iteration budget, and a
+convergence flag. Reads `rotation_turn_cap` / `converged` / `hit_iteration_cap`.
+"""
+
+[[checks]]
+id = "well_defined_convergence_target"
+title = "Objective has a defined target so endpoints are comparable"
+severity = "fail"
+description = """
+The flaw the original study identified in its own Discussion: clockwise,
+counter-clockwise, and either-rotation strategies each converged to a
+DIFFERENT endpoint, so comparing their total path lengths is ill-posed
+(distance to *a* minimum, not to a fixed destination). The objective must
+expose a single defined target (a sink/basin = the trailhead/road) so all
+strategies descend to the same point before any path-length comparison.
+Reads `objective_has_defined_target` / `convergence_target` /
+`endpoints_comparable` / `compares_path_length`.
+"""
+
+[[checks]]
+id = "gradient_validated"
+title = "Analytic gradient validated against finite differences / autodiff"
+severity = "needs_human"
+description = """
+Hand-coded analytic gradients (the original supplied d0f/d1f by hand) are a
+classic silent-error source: a wrong sign or factor produces a plausible but
+wrong path. The gradient must be validated against finite differences, or
+supplied by autodiff, before any descent result is trusted. The original's
+own future-work section asked for exactly this. Reads `gradient_validation`.
+"""
+
+[[checks]]
+id = "optimality_gap_reported"
+title = "Optimality claims backed by a reference optimum and reported gap"
+severity = "needs_human"
+description = """
+Any "shortest" / "near-optimal" / "more efficient path" claim needs a
+reference optimum to measure against — here, a grid shortest-safe-path
+(Dijkstra/A*) computed under the SAME grade constraint — and a reported
+optimality gap. The original reported raw total distance with no optimum to
+compare to, so it could not actually claim optimality. Reads
+`claims_optimality` / `optimum_reference` / `optimality_gap`.
+"""
+
+[[checks]]
+id = "step_discretization_sensitivity"
+title = "Sensitivity to step length / rotation increment reported"
+severity = "warn"
+description = """
+The fixed step length (0.1) and rotation increment (1 degree) are
+discretization choices, and both the feasibility verdict and every
+path-length number depend on them. A "near-continuous path" claim, in
+particular, is a statement about the step length. Report how feasibility and
+path length move as these are varied. Reads `step_sensitivity_analyzed`.
+"""
+
+# --- Reused generic handlers (already registered in verify/pitfalls.py) ---
+
+[[checks]]
+id = "baseline_reproduced_within_tolerance"
+title = "Reference behavior reproduced before any comparative claim"
+severity = "fail"
+description = """
+No comparative/optimality claim is allowed until the pipeline reproduces a
+known reference within tolerance: unconstrained steepest descent must recover
+the analytic minimizer of each test terrain, and the grid optimum routine
+must recover a known shortest path on a hand-checkable terrain. KICKOFF.md
+Section 4 principle 7. Delegates to verify/baseline_repro.
+"""
+
+[[checks]]
+id = "multi_seed_reporting"
+title = "Multi-start reporting (mean +/- SD over >= 5 initial points)"
+severity = "fail"
+description = """
+A single initial point (the original used one injured-hiker location per
+terrain) is not enough to characterize a path-finding scheme — behavior
+depends strongly on where you start on the surface. Use >= 5 initial points
+per terrain and report mean +/- SD of feasibility, path length, and
+optimality gap per condition. (`n_seeds`/`seeds` carries the initial-point
+count.)
+"""
+
+[[checks]]
+id = "counterintuitive_signs_flagged"
+title = "Counterintuitive findings flagged for interpretation"
+severity = "fail"
+description = """
+If a result contradicts the expected direction — e.g. a clockwise/counter-
+clockwise path-length asymmetry, the constrained path coming out SHORTER than
+the unconstrained one, or optimality gap that does not shrink as the rotation
+increment is refined — it must be flagged with candidate explanations and
+require operator interpretation before writing. The cw/ccw asymmetry in
+particular may be an artifact of the original's undefined endpoint rather
+than a real effect. See KICKOFF.md Section 10.
+"""
+
+[[checks]]
+id = "confidence_intervals_reported"
+title = "Confidence intervals reported for path-length / gap comparisons"
+severity = "needs_human"
+description = """
+A point-estimate difference in path length or optimality gap between two
+strategies is meaningless without a bootstrap (over initial points) or paired
+confidence interval. Whenever the run claims one strategy beats another, CIs
+or an equivalent paired statistical comparison must be present.
+"""

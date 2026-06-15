@@ -1,0 +1,33 @@
+{
+  "direction": "Do flexible machine-learning models (gradient-boosted trees, random forests) actually produce better clinical risk predictions than a well-regularized logistic regression on routinely-collected tabular data, once predictions are judged on calibration (Expected Calibration Error, Brier score) and not on discrimination (AUROC/AUPRC) alone? Quantify the discrimination-versus-calibration trade-off across multiple public clinical datasets and across training-set sizes N in {500, 2000, 8000, full}, tuning hyperparameters only on a validation split, validating on a shifted patient subgroup, running >=5 seeds with mean +/- SD and bootstrap 95% confidence intervals, and reproducing a published baseline AUROC within tolerance before making any comparative claim. The headline output is the relationship between model flexibility, training-set size, and the calibration-discrimination trade-off — explicitly including the possibility that logistic regression matches or beats the flexible models, which would be a notable (and literature-consistent, cf. Christodoulou et al. 2019) negative result.",
+  "context": {
+    "domain": "clinical_tabular",
+    "task": "binary_clinical_risk_prediction_tabular",
+    "constraints": {
+      "compute": "CPU-sufficient via scikit-learn; a single NVIDIA RTX 5090 is available but NOT required. Target: full experiment sweep < 45 minutes wall-clock.",
+      "datasets_whitelist": ["support2", "diabetes_130", "heart_disease_uci"],
+      "data_fetch": "Small public tabular CSVs fetched IN-SANDBOX via sklearn.datasets.fetch_openml or a direct CSV download. DO NOT call the dataset_fetch tool — its registry is configured for the large imaging archives (NIH/PadChest) only and will not serve these.",
+      "models": ["logistic_regression_l2", "random_forest", "hist_gradient_boosting"],
+      "training_sizes": [500, 2000, 8000, "full"],
+      "n_seeds": 5,
+      "cv": "stratified 5-fold; ALL preprocessing (imputation, scaling, encoding) fit on the training fold only, applied via an sklearn Pipeline",
+      "primary_metrics": ["auroc", "auprc"],
+      "calibration_metrics": ["ece", "brier", "calibration_slope"],
+      "hyperparameter_tuning_split": "validation",
+      "external_validation": "held-out shifted patient subgroup (e.g., by age band or admission type) disjoint at the patient level from training",
+      "max_runtime_minutes": 45
+    },
+    "ceiling": "Workshop track / short methods letter (e.g., a calibration-focused reproducibility note). Not Nature-tier. Per KICKOFF.md Section 1.",
+    "hard_rules": [
+      "all preprocessing (imputation, scaling, categorical encoding) fit on the training partition only — never on validation/test (use an sklearn Pipeline so this holds by construction)",
+      "exclude post-outcome and target-leaking features; document feature provenance and timing relative to the prediction point",
+      "patient/record-level split with asserted zero patient overlap across folds and the subgroup-validation partition",
+      "hyperparameters tuned on a validation split (or inner CV) disjoint from test",
+      ">=5 seeds with reported mean +/- SD and bootstrap 95% confidence intervals",
+      "report calibration (ECE, Brier) alongside discrimination — never AUROC alone",
+      "reproduce a published baseline AUROC within tolerance before any comparative claim",
+      "external / shifted-subgroup validation is required because the question concerns generalization across patient strata",
+      "flag counterintuitive findings (logistic regression matching/beating flexible models, or calibration degrading as N grows) for operator interpretation before writing"
+    ]
+  }
+}

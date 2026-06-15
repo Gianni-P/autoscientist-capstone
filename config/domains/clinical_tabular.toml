@@ -1,0 +1,165 @@
+# config/domains/clinical_tabular.toml
+# Pitfall checklist for tabular clinical-risk-prediction projects.
+#
+# Phase 5 (verify/pitfalls.py) consumes this file and runs each check
+# against pipeline state. This is the seed list for the `clinical_tabular`
+# domain — the tabular counterpart to medical_imaging.toml. Every
+# Pass / Fail / Needs-human verdict is keyed by `id`.
+#
+# Severity:
+#   "fail"         — blocks the pipeline; raises a hard halt + checkpoint.
+#   "needs_human"  — surfaces a checkpoint without halting downstream work.
+#   "warn"         — annotates the run; pipeline continues.
+#
+# These checks emphasize the failure modes that actually sink tabular
+# clinical-ML papers: preprocessing leakage, target leakage, and reporting
+# discrimination without calibration.
+
+[[checks]]
+id = "preprocessing_fit_on_train_only"
+title = "Imputation/scaling/encoding fit on training partition only"
+severity = "fail"
+description = """
+The single most common tabular leak: fitting an imputer, scaler, or
+target/category encoder on the full dataset (or on test rows) before
+splitting. Every preprocessing transform must be fit inside the training
+fold and merely applied to validation/test. Use a Pipeline so the fit is
+fold-scoped by construction.
+"""
+
+[[checks]]
+id = "target_leakage_features_excluded"
+title = "Post-outcome / target-leaking features excluded"
+severity = "fail"
+description = """
+Features recorded at or after the outcome (e.g., discharge disposition for
+a mortality model, or fields that are proxies/definitions of the label)
+inflate performance and do not generalize to deployment. Feature provenance
+and timing relative to the prediction point must be documented, and leaking
+columns dropped.
+"""
+
+[[checks]]
+id = "patient_level_split"
+title = "Patient/record-level split with no duplication across folds"
+severity = "fail"
+description = """
+When a patient contributes multiple encounters/rows (e.g., diabetes-130 has
+repeated admissions), splitting at the row level leaks identity across
+train/test. Split by patient ID and assert zero patient overlap across CV
+folds and the external/subgroup partition.
+"""
+
+[[checks]]
+id = "calibration_reported"
+title = "Calibration (ECE, Brier) reported alongside discrimination"
+severity = "fail"
+description = """
+This project's central question is the discrimination-vs-calibration
+trade-off. Reporting AUROC alone is the failure mode under study: a model
+can discriminate well yet be badly miscalibrated and clinically misleading.
+Every reported comparison must include ECE and Brier (and ideally a
+calibration slope/intercept), not just AUROC/AUPRC.
+"""
+
+[[checks]]
+id = "hyperparameter_tuning_split"
+title = "Hyperparameters tuned on validation split (not test)"
+severity = "fail"
+description = """
+Tuning on the test split contaminates the held-out estimate -- every
+selection round leaks information into the reported score. Tuning must use a
+validation partition (or inner CV loop) disjoint from the test partition.
+"""
+
+[[checks]]
+id = "multi_seed_reporting"
+title = "Multi-seed reporting (mean +/- SD over >= 5 seeds)"
+severity = "fail"
+description = """
+Single-seed results are unreliable; resampling and model randomness swing
+metrics. Tabular models are cheap, so this project mandates >= 5 seeds with
+mean and SD reported per condition. Fails when n_seeds < 5 or per-condition
+variance is not reported.
+"""
+
+[[checks]]
+id = "baseline_reproduced_within_tolerance"
+title = "Published baseline reproduced within tolerance"
+severity = "fail"
+description = """
+No "novel"/comparative claim is allowed until the pipeline reproduces a
+published baseline metric within configured tolerance on the same dataset
+(e.g., diabetes-130 30-day readmission AUROC, or a SUPPORT mortality model).
+KICKOFF.md Section 4 principle 7.
+"""
+
+# NOTE: id reuses the registered `external_validation_present` handler
+# (it keys off claims_generalization + external_validation_datasets); a
+# held-out shifted subgroup counts as an external_validation_datasets entry.
+[[checks]]
+id = "external_validation_present"
+title = "External or shifted-subgroup validation present for generalization claims"
+severity = "fail"
+description = """
+Any claim about generalization across patient strata requires evaluation on
+a partition shifted from training (a held-out subgroup by age band,
+admission type, or a second dataset). In-distribution CV alone cannot
+support a generalization claim.
+"""
+
+[[checks]]
+id = "counterintuitive_signs_flagged"
+title = "Counterintuitive findings flagged for interpretation"
+severity = "fail"
+description = """
+If a result contradicts the dominant expectation -- e.g., logistic
+regression matching or beating gradient-boosted trees, or calibration
+*degrading* as training size grows -- it must be flagged with candidate
+explanations and require operator interpretation before any writing
+proceeds. (Note: LR matching ML is literature-consistent per Christodoulou
+2019; the flag is to force explicit interpretation, not to assume an error.)
+See KICKOFF.md Section 10.
+"""
+
+[[checks]]
+id = "confidence_intervals_reported"
+title = "Confidence intervals reported for performance comparisons"
+severity = "needs_human"
+description = """
+A point-estimate AUROC/ECE difference is meaningless without a bootstrap or
+DeLong confidence interval. Whenever the run claims one model outperforms
+another (or claims a difference across training sizes / subgroups), CIs or an
+equivalent paired statistical comparison must be present.
+"""
+
+[[checks]]
+id = "missing_data_handling_disclosed"
+title = "Missing-data mechanism and imputation strategy disclosed"
+severity = "needs_human"
+description = """
+Clinical tabular data is heavily missing, often not-at-random. The
+missingness rate per feature and the imputation strategy (and whether
+missingness indicators were added) must be disclosed; silent dropping of
+rows with missing values can bias the cohort.
+"""
+
+[[checks]]
+id = "class_balance_reported"
+title = "Class balance / prevalence reported on train and test"
+severity = "warn"
+description = """
+Imbalanced outcomes silently inflate accuracy. Always report prevalence
+alongside metrics; prefer AUROC + AUPRC + calibration over accuracy.
+"""
+
+[[checks]]
+id = "clinical_utility_beyond_auroc"
+title = "Clinical utility considered (decision curve / net benefit)"
+severity = "warn"
+description = """
+Discrimination and calibration still don't capture decision usefulness. Where
+a deployment threshold is implied, a decision-curve / net-benefit analysis
+(or at least threshold-specific sensitivity/specificity) strengthens the
+clinical relevance of the comparison.
+"""

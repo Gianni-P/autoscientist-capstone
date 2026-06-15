@@ -1,0 +1,8 @@
+{
+  "anchor_id": "idea_gen_02_thin_lit_weak_grounding",
+  "agent": "idea_gen",
+  "input_payload": "{\"direction\": \"Apply self-supervised learning to detect rare findings in chest radiographs.\", \"lit_digest\": {\"summary\": \"Limited literature retrieved.\", \"key_works\": [], \"gaps\": [], \"consensus\": [], \"disagreements\": [], \"tools_needed\": true}}",
+  "expected_summary": "Five ideas, each marked grounding=weak (per the agent's hard rule when tools_needed=true). The agent must surface in operator_questions or summary that the literature digest is thin. Failure modes should reflect uncertainty, not invent confidence.",
+  "expected_keys": ["ideas[].grounding"],
+  "notes": "Tests the hard rule in idea_gen.md: 'If lit_digest.tools_needed = true, mark every idea grounding: weak'. A judge should penalize ideas that claim grounding=strong here."
+}

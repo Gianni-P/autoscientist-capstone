@@ -1,0 +1,46 @@
+# Per-project configuration overrides for pneumonia-data-efficiency.
+# The runtime layers this on top of config/default.toml and
+# config/models.toml. Anything omitted falls back to the defaults.
+
+[project]
+id = "pneumonia-data-efficiency"
+domain = "medical_imaging"
+description = "v1 end-to-end test project: data-size effect on cross-institutional pneumonia detection."
+kickoff_payload_path = "projects/pneumonia-data-efficiency/kickoff_payload.json"
+
+[budget]
+# A per-project soft cap separate from the monthly hard cap (which still
+# applies). The runtime currently enforces only the monthly cap in
+# runtime/budget.py; this entry documents intent and is read by the
+# Phase 8 runbook for operator-facing reporting.
+project_soft_cap_usd = 25.0
+
+[verify]
+# Pitfall domain to run during stage-3 / stage-4 verification.
+domain = "medical_imaging"
+
+[datasets]
+# Which datasets the methodology agent is allowed to declare. Acts as
+# a whitelist so the agent doesn't invent a dataset it can't fetch.
+allowed = ["nih_chestxray14", "padchest"]
+
+[experiment.defaults]
+# Defaults the methodology agent should anchor on unless it explicitly
+# argues for a change. KICKOFF Section 8.
+training_sizes = [1000, 5000, 25000, 100000]
+n_seeds = 3
+backbone = "resnet50_imagenet"
+target_label = "pneumonia"
+external_validation_dataset = "padchest"
+hyperparameter_tuning_split = "validation"
+
+[checkpoints]
+# All five HITL checkpoints are mandatory; the runtime enforces this.
+# Listed here for the runbook only.
+mandatory = [
+    "idea_selection",
+    "methodology_approval",
+    "preliminary_results",
+    "full_results_validation",
+    "draft_review",
+]

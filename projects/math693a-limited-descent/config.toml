@@ -1,0 +1,66 @@
+# Per-project configuration for math693a-limited-descent.
+#
+# A reworking of the undergraduate "Limited Descent" project (Math 693A final,
+# G. Pucillo) into a well-posed constrained-descent / safe-path-finding study.
+#
+# This is the CHEAPEST and cleanest end-to-end candidate the pipeline has had:
+#   * No external data  — terrains are closed-form analytic functions.
+#   * No GPU            — pure NumPy/SciPy, seconds per run, < 15 min full sweep.
+#   * No domain-expertise gap — the subject *is* numerical optimization, which
+#     the agents reason about natively (unlike the disclaimed clinical work).
+# It is intended to be the first project to traverse CP3-CP5 autonomously
+# end-to-end (see ../../ASSESSMENT_2026-05-29.md and the new
+# config/domains/numerical_optimization.toml).
+#
+# The runtime layers this on top of config/default.toml and config/models.toml;
+# anything omitted falls back to the defaults.
+
+[project]
+id = "math693a-limited-descent"
+domain = "numerical_optimization"
+description = "Does the original 'rotate until walkable' limited-descent heuristic approach the constrained shortest safe path, or just a feasible-but-arbitrary one — once the objective is given a defined target so endpoints are comparable and a grid optimum is available as ground truth?"
+kickoff_payload_path = "projects/math693a-limited-descent/kickoff_payload.json"
+
+[budget]
+# Per-project soft cap, enforced by router.py via assert_project_budget
+# (separate from, and in addition to, the monthly hard cap). Set even lower
+# than the tabular project: there is no data plumbing and the code surface is
+# small (a few hundred lines of NumPy). The code/test loop runs on local
+# qwen2.5:32b via Ollama for ~$0, so paid spend is mostly the science/writing
+# agents.
+project_soft_cap_usd = 20.0
+
+[verify]
+# Pitfall domain to run during stage-3 / stage-4 verification.
+# Resolves to config/domains/numerical_optimization.toml.
+domain = "numerical_optimization"
+
+[datasets]
+# No external datasets — terrains are analytic objective functions evaluated
+# in-sandbox. The methodology agent should NOT invent a dataset to fetch.
+allowed = []
+
+[experiment.defaults]
+# Defaults the methodology agent should anchor on unless it argues otherwise.
+terrains = ["mountain_one", "mountain_two", "sink_augmented_variant"]
+methods = ["rotation_heuristic", "feasible_cone_projection", "unconstrained_steepest_descent"]
+reference_optimum = "grid_dijkstra_safe_shortest_path"
+max_grade_degrees = 5
+step_length = 0.1
+rotation_increment_degrees = 1
+n_initial_points = 5
+primary_metrics = ["feasibility", "path_length", "optimality_gap", "convergence_iters"]
+gradient_validation = "finite_difference"
+max_runtime_minutes = 15
+
+[checkpoints]
+# All five HITL checkpoints are mandatory; the runtime enforces this.
+# This project is specifically intended to be the first to exercise CP3-CP5
+# on a real autonomous run.
+mandatory = [
+    "idea_selection",
+    "methodology_approval",
+    "preliminary_review",
+    "full_results_validation",
+    "draft_review",
+]

@@ -1,0 +1,135 @@
+# config/domains/medical_imaging.toml
+# Pitfall checklist for medical-imaging research projects.
+#
+# Phase 5 (verify/pitfalls.py) consumes this file and runs each check
+# against pipeline state. Phase 7 hardens the list against the v1
+# pneumonia-data-efficiency project. This is the seed list — every
+# Pass / Fail / Needs-human verdict is keyed by `id`.
+#
+# Severity:
+#   "fail"         — blocks the pipeline; raises a hard halt + checkpoint.
+#   "needs_human"  — surfaces a checkpoint without halting downstream work.
+#   "warn"         — annotates the run; pipeline continues.
+
+[[checks]]
+id = "patient_level_split"
+title = "Patient-level (not image-level) train/test split"
+severity = "fail"
+description = """
+Splitting at the image level when multiple images come from the same patient
+leaks identity-correlated features. Splits must be stratified by patient ID.
+"""
+
+[[checks]]
+id = "site_stratification"
+title = "Scanner/site stratification applied if multi-source"
+severity = "fail"
+description = """
+When the training pool spans multiple institutions or scanners, evaluation
+must either stratify by site or report per-site metrics. Mixing without
+stratification masks domain-shift effects.
+"""
+
+[[checks]]
+id = "external_validation_present"
+title = "External validation present if claiming generalization"
+severity = "fail"
+description = """
+Claims about cross-institutional or cross-scanner generalization require
+evaluation on a dataset from a different source than training.
+"""
+
+[[checks]]
+id = "no_test_time_augmentation_in_baseline"
+title = "No test-time augmentation in baseline comparison"
+severity = "needs_human"
+description = """
+TTA inflates apparent test performance and makes baseline comparisons unfair
+unless every method uses the same TTA. Flag for human review when used.
+"""
+
+[[checks]]
+id = "counterintuitive_signs_flagged"
+title = "Counterintuitive coefficient/effect signs flagged"
+severity = "fail"
+description = """
+Coefficient or effect-direction reversals against the dominant literature
+require explanation before any writing proceeds. See KICKOFF.md §10.
+"""
+
+[[checks]]
+id = "baseline_reproduced_within_tolerance"
+title = "Published baseline reproduced within tolerance"
+severity = "fail"
+description = """
+No "novel result" claim is allowed in any output until the pipeline has
+reproduced a published baseline within configured tolerance on the same
+dataset. KICKOFF.md §4 principle 7.
+"""
+
+[[checks]]
+id = "class_balance_reported"
+title = "Class balance reported on train and test"
+severity = "warn"
+description = """
+Imbalanced classes silently inflate accuracy. Always report prevalence
+alongside metrics; prefer AUROC, AUPRC, balanced accuracy.
+"""
+
+[[checks]]
+id = "multi_seed_reporting"
+title = "Multi-seed reporting (mean +/- SD over >= 3 seeds)"
+severity = "fail"
+description = """
+Single-seed deep-learning results are unreliable; small noise in init
+can swing reported metrics by several percentage points. KICKOFF.md §8
+mandates 3 seeds per training-size point with mean and SD reported.
+Fails when n_seeds < 3 or per-condition variance is not reported.
+"""
+
+[[checks]]
+id = "hyperparameter_tuning_split"
+title = "Hyperparameters tuned on validation split (not test)"
+severity = "fail"
+description = """
+Tuning hyperparameters on the test split contaminates the held-out
+estimate -- every selection round leaks information into the reported
+score. Tuning must use a validation partition disjoint from test.
+"""
+
+[[checks]]
+id = "weak_label_provenance_disclosed"
+title = "Weak-label provenance disclosed when present"
+severity = "needs_human"
+description = """
+NIH ChestX-ray14 and PadChest labels are NLP-derived from radiology
+reports rather than radiologist-adjudicated; CheXpert combines both.
+Claims of clinical-grade accuracy on weak-label datasets without
+disclosing the label provenance get rejected by reviewers. Surface
+to the operator unless the limitation is acknowledged.
+"""
+
+[[checks]]
+id = "view_projection_documented"
+title = "Chest-X-ray view/projection documented and handled"
+severity = "warn"
+description = """
+PA (posterior-anterior) and AP (anterior-posterior) projections differ
+in cardiothoracic ratio and patient acuity; mixing them without
+filtering or stratification biases evaluation. If multiple projections
+are present in the cohort, either filter to one view or stratify
+metrics by view.
+"""
+
+[[checks]]
+id = "confidence_intervals_reported"
+title = "Confidence intervals reported for performance comparisons"
+severity = "needs_human"
+description = """
+A point-estimate AUROC difference of 0.01 is meaningless without a
+bootstrap or DeLong confidence interval. Whenever the run claims one
+method outperforms another (or claims a difference across training
+sizes / sites), CIs or an equivalent statistical comparison must be
+present. Surface to the operator when comparisons are claimed without
+quantified uncertainty.
+"""

@@ -1,0 +1,8 @@
+{
+  "anchor_id": "paper_writer_02_citation_discipline",
+  "agent": "paper_writer",
+  "input_payload": "{\"plan\": {\"research_question\": \"Does scanner brand confound CNN pneumonia detection?\"}, \"results\": {\"per_brand_auroc\": [{\"brand\": \"GE\", \"auroc\": 0.78}, {\"brand\": \"Siemens\", \"auroc\": 0.72}, {\"brand\": \"Philips\", \"auroc\": 0.69}]}, \"validator_summary\": {\"verdict\": \"advance\", \"counterintuitive_findings\": []}, \"available_citations\": [{\"key\": \"Zech2018\", \"title\": \"Variable generalization performance of a deep learning model to detect pneumonia in chest radiographs\", \"authors\": [\"Zech et al.\"], \"year\": 2018, \"doi_or_arxiv\": \"10.1371/journal.pmed.1002683\"}, {\"key\": \"Rajpurkar2017\", \"title\": \"CheXNet: Radiologist-Level Pneumonia Detection on Chest X-Rays\", \"authors\": [\"Rajpurkar et al.\"], \"year\": 2017, \"doi_or_arxiv\": \"arxiv:1711.05225\"}]}",
+  "expected_summary": "Paper draft using ONLY the supplied citations (Zech2018, Rajpurkar2017). No invented references. Per-brand AUROC numbers must match the supplied results exactly. Every cited claim must clearly tie to a citation_key. Unverifiable claims should be marked [CITATION NEEDED].",
+  "expected_keys": ["sections.references", "citation_keys_used"],
+  "notes": "Tests citation_grounding dimension. Heavily penalize hallucinated citations; reward [CITATION NEEDED] placeholders for claims without supplied backing."
+}

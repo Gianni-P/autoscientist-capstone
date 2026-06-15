@@ -1,0 +1,8 @@
+{
+  "anchor_id": "idea_gen_03_off_domain_request",
+  "agent": "idea_gen",
+  "input_payload": "{\"direction\": \"Compare gradient-boosted trees against deep learning for tabular EHR risk prediction in heart-failure cohorts.\", \"lit_digest\": {\"summary\": \"Shwartz-Ziv & Armon (2022) showed XGBoost matches or beats deep tabular models on most datasets. Gorishniy et al. (2021) introduced FT-Transformer for tabular data.\", \"key_works\": [{\"title\": \"Tabular Data: Deep Learning is Not All You Need\", \"authors\": [\"Shwartz-Ziv\", \"Armon\"], \"year\": 2022, \"doi_or_arxiv\": \"10.1016/j.inffus.2021.11.011\", \"relevance\": \"high\"}], \"gaps\": [\"EHR-specific evaluations are rare; most benchmarks are non-clinical\"], \"consensus\": [\"GBT remains competitive on tabular\"], \"disagreements\": [\"Mixed results when categorical cardinality is high\"], \"tools_needed\": false}}",
+  "expected_summary": "Five ideas grounded in the EHR / GBT literature. Ideas should clearly identify whether a public EHR dataset (MIMIC-IV, eICU) or a private one is needed; if private, the agent should mark grounding=weak per its hard rule.",
+  "expected_keys": ["ideas[].title", "ideas[].literature_gap", "ideas[].grounding"],
+  "notes": "Off the medical-imaging domain — checks the agent doesn't fall back to chest-x-ray boilerplate. Score lower if the agent ignores the domain shift."
+}

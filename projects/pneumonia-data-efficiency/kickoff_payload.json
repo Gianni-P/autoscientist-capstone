@@ -1,0 +1,30 @@
+{
+  "direction": "How does training data size affect cross-institutional generalization in CNN-based pneumonia detection from chest radiographs? Specifically, fine-tune ResNet-50 (ImageNet pretrained) on NIH ChestX-ray14 subsets of size N in {1k, 5k, 25k, 100k}. For each N, evaluate on the held-out NIH test split AND on the PadChest pneumonia-labeled subset. Report the generalization gap (in-domain AUROC minus external AUROC) versus N, run 3 seeds per N with mean +/- SD, and compare to a published reference (CheXNet-Rajpurkar2017 or comparable).",
+  "context": {
+    "domain": "medical_imaging",
+    "task": "binary_classification_pneumonia_vs_other",
+    "constraints": {
+      "compute": "single NVIDIA RTX 5090, 32 GB VRAM",
+      "datasets_whitelist": ["nih_chestxray14", "padchest"],
+      "training_sizes": [1000, 5000, 25000, 100000],
+      "n_seeds": 3,
+      "backbone": "resnet50_imagenet",
+      "external_validation_dataset": "padchest",
+      "hyperparameter_tuning_split": "validation",
+      "max_training_minutes_per_run": 120,
+      "label_provenance": {
+        "nih_chestxray14": "nlp_derived",
+        "padchest": "nlp_derived"
+      }
+    },
+    "ceiling": "Workshop track / short letter quality. Not Nature-tier. Per KICKOFF.md Section 1.",
+    "hard_rules": [
+      "patient-level (not image-level) train/val/test splits",
+      "external validation on PadChest is required because the question claims generalization",
+      "3 seeds per N with reported variance",
+      "no hyperparameter tuning on the test split",
+      "baseline reproduction within tolerance is required before any 'novel' claim",
+      "weak-label provenance for NIH and PadChest must be acknowledged"
+    ]
+  }
+}

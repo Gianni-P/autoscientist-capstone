@@ -1,0 +1,62 @@
+[project]
+name = "autoscientist"
+version = "0.1.0"
+description = "Multi-agent research pipeline that produces academic papers, supplementary docs, and reproducible code repos from high-level research directions."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "autoscientist operator" }]
+license = { text = "Proprietary" }
+
+dependencies = [
+    "anthropic>=0.100,<1.0",
+    "openai>=2.36,<3.0",
+    "streamlit>=1.57,<2.0",
+    "tenacity>=9.1,<10.0",
+    "structlog>=25.5,<26.0",
+    "python-dotenv>=1.2,<2.0",
+    "rich>=14,<15",
+    "pydantic>=2.9,<3.0",
+    # Phase 3 tools
+    "httpx>=0.27,<1.0",
+    "pypdf>=5.0,<6.0",
+    "arxiv>=2.1,<3.0",
+    "kaggle>=1.6,<2.0",
+    "torch>=2.12.0",
+    "torchvision>=0.27.0",
+    "scikit-learn>=1.8.0",
+    "pandas>=3.0.2",
+    "numpy>=2.4.4",
+    "pytest>=9.0.3",
+    "pillow>=12.2.0",
+    # MCP client/server SDK (clients/mcp_bridge.py). The <2.0 bound is
+    # load-bearing: the 2.0 alpha line has breaking API changes.
+    "mcp>=1.27,<2.0",
+]
+
+[project.scripts]
+autoscientist = "autoscientist.runtime.runner:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autoscientist"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "RUF", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error"]

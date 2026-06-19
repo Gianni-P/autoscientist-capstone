@@ -1,0 +1,23 @@
+# Derived from qwen2.5:32b with an enlarged context-window request.
+#
+# fix 4 (2026-06-18): the intended stronger code_gen/test_gen model. The dense
+# 32B replaces the qwen3-coder-30b A3B MoE (only ~3B active params), whose small
+# active count was the likely root of the subtle numerical-reasoning bugs that
+# kept failing code_review. The coder-tuned qwen2.5-coder:32b was the first
+# choice but it does NOT emit structured OpenAI tool_calls through Ollama's
+# /v1 shim (it returns the call as text -> n_tool_calls=0, validated via
+# scripts/smoke_local_toolcall.py), so it can't drive the agentic loop. The
+# GENERAL qwen2.5:32b tool-calls cleanly (the repo's documented qwen25_coder
+# behaviour) and is still a strong dense coder/math model.
+#
+# CONTEXT/VRAM: Ollama auto-fits num_ctx to keep the model 100% on GPU. A dense
+# 32B (~19GB q4 weights) + KV cache caps at ~32k on the 32GB RTX 5090 — so this
+# requests 65536 but Ollama will load the largest that fits (expect ~32768).
+# That is still far above Ollama's small default, which is the point. 32k is
+# adequate for code_gen/test_gen under the current harness (no execute-spin in
+# code_gen; check_imports/handoff keep context small). VERIFY with `ollama ps`.
+#
+# Build:   ollama create qwen2.5-32b-64k -f config/qwen2.5-32b-64k.Modelfile
+# Revert:  repoint code_gen/test_gen to "qwen3_coder" in config/models.toml.
+FROM qwen2.5:32b
+PARAMETER num_ctx 65536

@@ -120,3 +120,45 @@ def test_collect_truncates_oversize_file(tmp_path: Path) -> None:
     collected = _collect_py_files(sandbox / "src", sandbox)
     assert len(collected) == 1
     assert "truncated by runner" in collected[0]["content"]
+
+
+# ---------------------------------------------------------------------------
+# _is_thin_code_review_payload  (runner-side trigger for the rebuild above)
+# ---------------------------------------------------------------------------
+
+def test_thin_payload_empty_or_whitespace() -> None:
+    from autoscientist.runtime.runner import _is_thin_code_review_payload
+
+    assert _is_thin_code_review_payload("") is True
+    assert _is_thin_code_review_payload("   \n\t ") is True
+
+
+def test_thin_payload_short_conversational_fragment() -> None:
+    # The exact failure observed 2026-06-18 (run_49f1468…): test_gen ran out of
+    # tool rounds and forwarded a mid-sentence scrap with no files/structure.
+    from autoscientist.runtime.runner import _is_thin_code_review_payload
+
+    assert _is_thin_code_review_payload(
+        "I need to import the configuration constants. Let me fix this:"
+    ) is True
+
+
+def test_structured_handoff_summary_is_not_thin() -> None:
+    from autoscientist.runtime.runner import _is_thin_code_review_payload
+
+    # A real (even short) handoff summary carries file structure.
+    summary = '{"files_written": ["src/config.py"], "run_cmd": "pytest tests/"}'
+    assert _is_thin_code_review_payload(summary) is False
+    # A bare source-path mention also counts as substantive.
+    assert _is_thin_code_review_payload("see src/main.py") is False
+
+
+def test_long_prose_payload_is_not_thin() -> None:
+    from autoscientist.runtime.runner import (
+        _THIN_REVIEW_PAYLOAD_CHARS,
+        _is_thin_code_review_payload,
+    )
+
+    long_prose = "the implementation is complete; " * 40
+    assert len(long_prose) >= _THIN_REVIEW_PAYLOAD_CHARS
+    assert _is_thin_code_review_payload(long_prose) is False

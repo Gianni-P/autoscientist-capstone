@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>autoscientist · console</title>
+  <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;🧪&lt;/text&gt;&lt;/svg&gt;" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Top bar (vibrancy) -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🧪</span>
+      <div class="brand-text">
+        <div class="brand-title">autoscientist</div>
+        <div class="brand-sub">operator console</div>
+      </div>
+    </div>
+
+    <div class="topbar-center" id="budget">
+      <div class="budget-meter" title="Monthly spend vs cap">
+        <div class="budget-line">
+          <span class="budget-spent" id="budget-spent">$0.00</span>
+          <span class="budget-sep">/</span>
+          <span class="budget-cap" id="budget-cap">$0.00</span>
+          <span class="budget-month" id="budget-month"></span>
+        </div>
+        <div class="budget-track"><div class="budget-fill" id="budget-fill"></div></div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <div class="conn" id="conn" data-state="connecting">
+        <span class="conn-dot"></span><span class="conn-label">connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Body: sidebar + main -->
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section" id="pending-section" hidden>
+        <div class="sidebar-head">
+          <span>Action needed</span><span class="count-badge" id="pending-count">0</span>
+        </div>
+        <div id="pending-list" class="pending-list"></div>
+      </div>
+
+      <div class="sidebar-section grow">
+        <div class="sidebar-head">
+          <span>Runs</span>
+          <div class="head-actions">
+            <button class="new-run-btn" id="new-run-btn" title="Start a new run">+ New run</button>
+            <span class="count-badge" id="runs-count">0</span>
+          </div>
+        </div>
+        <div id="runs-list" class="runs-list"></div>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="empty" id="empty-state">
+        <div class="empty-mark">🧪</div>
+        <div class="empty-title">No run selected</div>
+        <div class="empty-sub">Pick a run on the left to watch its checkpoints, agents, and handoffs live.</div>
+      </div>
+
+      <section class="run-view" id="run-view" hidden>
+        <!-- Hero -->
+        <div class="hero">
+          <div class="hero-top">
+            <div class="hero-id">
+              <span class="status-pill" id="run-status">·</span>
+              <h1 id="run-project">—</h1>
+            </div>
+            <div class="hero-controls" id="run-controls"></div>
+          </div>
+          <div class="hero-meta" id="run-meta"></div>
+        </div>
+
+        <!-- Checkpoint stepper -->
+        <div class="stepper-wrap">
+          <div class="stepper" id="stepper"></div>
+        </div>
+
+        <!-- Now running -->
+        <div id="now-card" class="now-card"></div>
+
+        <!-- Tabs -->
+        <div class="segmented" id="tabs" role="tablist">
+          <button class="seg active" data-tab="activity">Activity</button>
+          <button class="seg" data-tab="handoffs">Handoffs &amp; Prompts</button>
+          <button class="seg" data-tab="checkpoints">Checkpoints</button>
+          <button class="seg" data-tab="agents">Agents</button>
+        </div>
+
+        <div class="tab-body">
+          <div class="tab-panel" id="panel-activity">
+            <div class="feed" id="feed"></div>
+            <button class="jump-latest" id="jump-latest" hidden>↓ Jump to latest</button>
+          </div>
+          <div class="tab-panel" id="panel-handoffs" hidden></div>
+          <div class="tab-panel" id="panel-checkpoints" hidden></div>
+          <div class="tab-panel" id="panel-agents" hidden></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Checkpoint resolver (modal) -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-titles">
+          <span class="status-pill" id="cp-status">·</span>
+          <h2 id="cp-title">Checkpoint</h2>
+        </div>
+        <button class="icon-btn" id="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

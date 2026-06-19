@@ -58,6 +58,27 @@ default_max_tokens = 4096
 # self-heals defensively. Default for all other models is true.
 supports_temperature = false
 
+[models.claude_opus_48]
+# 2026-06-18 (fix 4, take 2): Opus 4.8 for code_gen/test_gen after BOTH local
+# models failed to converge — qwen3-coder (A3B MoE) made subtle math errors and
+# qwen2.5:32b (dense) sprayed files / skipped check_imports (20 blockers). Opus
+# 4.8 is the strongest available model; the bet is it converges the code in 1-2
+# cycles where Sonnet would too but Opus is more likely to nail the math/API in
+# one shot. EXPENSIVE: $15/$75 per Mtok (5x Sonnet, 25x local-$0). Separate from
+# [models.claude_opus] (4.7, paper_writer) so that agent is untouched. Unlike
+# 4.7, 4.8 is a normal model — temperature supported (default true); claude.py
+# self-heals if any temperature quirk surfaces. Revert: repoint code_gen/test_gen
+# to "qwen3_coder" (local $0) or "claude_sonnet" (cheaper cloud).
+provider = "claude"
+model_id = "claude-opus-4-8"
+prompt_usd_per_mtok = 15.0
+output_usd_per_mtok = 75.0
+default_max_tokens = 16384  # code needs room to emit a full file in one call
+# 2026-06-18: confirmed live — Opus 4.8 ALSO rejects `temperature` (HTTP 400),
+# like 4.7. claude.py self-heals (retries without it), but set this so the
+# router drops temperature upfront and avoids a wasted 400+retry on every call.
+supports_temperature = false
+
 [models.qwen_27b]
 # qwen3.6:27b is a thinking model; chain-of-thought is emitted on a
 # separate `reasoning` field via the OpenAI-compat shim. With no_think=true
@@ -130,6 +151,28 @@ output_usd_per_mtok = 0.0
 default_max_tokens = 16384
 no_think = true  # non-thinking coder model; flag is a harmless no-op (as with qwen2.5)
 
+[models.qwen25_32b]
+# fix 4 (2026-06-18): DENSE 32B, the stronger replacement for qwen3_coder
+# (qwen3-coder-30b is an A3B MoE — only ~3B *active* params, the likely root of
+# the subtle numerical-reasoning bugs that kept failing code_review). Dense 32B
+# = all 32B active, for more consistent numerical reasoning.
+# NOTE: the coder-tuned qwen2.5-coder:32b was the first pick but it does NOT emit
+# structured OpenAI tool_calls through Ollama's /v1 shim (returns the call as
+# text -> n_tool_calls=0, validated via scripts/smoke_local_toolcall.py), so it
+# can't drive the agentic loop. The GENERAL qwen2.5:32b tool-calls cleanly (the
+# repo's documented qwen25_coder behaviour) and is still strong at code/math.
+# Built into a context-maximised variant (config/qwen2.5-32b-64k.Modelfile,
+# `ollama create qwen2.5-32b-64k -f ...`). Ollama auto-fits num_ctx to VRAM:
+# loads ~32768 at 28GB / 100% GPU on the 32GB RTX 5090 (verified). Trade-off:
+# dense 32B is slower than the MoE and capped at ~32k context here. Revert by
+# repointing code_gen/test_gen back to "qwen3_coder".
+provider = "ollama"
+model_id = "qwen2.5-32b-64k"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 16384
+no_think = true  # qwen2.5 is not a thinking model; flag is a harmless no-op
+
 [models.mock_stub]
 # Used by Phase 1 stub agents (echo, handoff). No network, deterministic.
 provider = "mock"
@@ -167,8 +210,24 @@ cost_ceiling_usd = 2.00
 # of wasted review cycles the bad local output caused — so cloud generation is net
 # CHEAPER and actually converges. Revert to "qwen3_coder" (still defined) for local
 # $0 generation. code_gen has no `execute` tool, so it can't debug-spin on Sonnet.
-model = "claude_sonnet"
-cost_ceiling_usd = 3.00
+# 2026-06-17: flipped BACK to qwen3_coder. The harness fixes that caused the
+# non-convergence landed today: prompts de-contaminated (per-project
+# {{PROJECT_CONTEXT}} instead of the hardcoded chest-xray block the local model
+# followed literally), a read-only `check_imports` tool so code_gen catches phantom
+# imports before handoff, and a `handoff` tool for reliable routing. Revert to
+# "claude_sonnet" if local generation still won't converge after a live run.
+# 2026-06-18 (fix 4): repointed qwen3_coder -> qwen25_coder_32b. Two guided
+# live runs showed qwen3-coder (A3B MoE, ~3B active) applies mechanical review
+# fixes but keeps reintroducing subtle math/indexing bugs across 3+ cycles and
+# never converges within the project budget. Moving to a DENSE 32B coder to get
+# more consistent numerical reasoning. Revert: restore model = "qwen3_coder".
+# 2026-06-18 (fix 4, take 2): repointed qwen25_32b -> claude_opus_48. BOTH local
+# models failed to converge (MoE: subtle math bugs; dense general: file sprawl +
+# skipped check_imports, 20 blockers). Going to the strongest model. EXPENSIVE
+# ($15/$75 per Mtok) — ceilings raised below for Opus headroom. Revert: restore
+# "qwen3_coder" (local $0) or "claude_sonnet" (cheaper cloud).
+model = "claude_opus_48"
+cost_ceiling_usd = 5.00  # raised 3->5 for Opus (16k-token outputs are ~$1-2/call)
 # 2026-06-11: raised 12 -> 30. The first qwen3-coder regen run hit the 12-round
 # cap mid-debug (write_file/execute self-test loop), emitted NO HANDOFF, and the
 # runner treated that as terminal -> run "completed" after code_gen with 0
@@ -177,22 +236,30 @@ cost_ceiling_usd = 3.00
 # cap is a ceiling, not a fixed cost (the loop exits the moment the agent hands
 # off) and the model is local ($0), so a higher cap only helps the cut-off case.
 max_tool_rounds = 30
-invocation_ceiling_usd = 4.00  # cumulative across the round loop (backstop if rerouted to Claude)
+invocation_ceiling_usd = 10.00  # raised 4->10 for Opus (cumulative across the round loop)
 
 [agents.test_gen]
 # 2026-06-12: switched qwen3_coder -> claude_sonnet alongside code_gen (see the
 # code_gen note above for the cost rationale). Sonnet writes tests that match the
 # source API it just generated, so the code<->review loop can actually converge.
-# Revert to "qwen3_coder" (still defined) for local $0 generation.
-model = "claude_sonnet"
-cost_ceiling_usd = 2.00
+# 2026-06-17: flipped BACK to qwen3_coder alongside code_gen (harness fixes landed —
+# see the code_gen note above). Revert to "claude_sonnet" if convergence regresses.
+# 2026-06-18 (fix 4): repointed qwen3_coder -> qwen25_coder_32b alongside
+# code_gen (dense 32B coder; see the code_gen note). Keeps the code<->test
+# contract on the same model. Revert: restore model = "qwen3_coder".
+# 2026-06-18 (fix 4, take 2): repointed qwen25_32b -> claude_opus_48 alongside
+# code_gen (strongest model after both local models failed). Same model keeps
+# the code<->test contract consistent. EXPENSIVE; ceilings raised. Revert:
+# restore "qwen3_coder" or "claude_sonnet".
+model = "claude_opus_48"
+cost_ceiling_usd = 5.00  # raised 2->5 for Opus
 # Lowered 8 -> 4 (2026-05-31 audit) WHEN test_gen ran on Claude and was 62% of
 # lifetime spend. That cost rationale is now MOOT: test_gen routes to local
 # qwen3-coder ($0). 2026-06-11: raised 4 -> 15 so the local model has room to
 # write tests AND emit its HANDOFF before the cap — a 4-round cap would starve
 # it the same way code_gen's 12 did. Still a ceiling; the loop exits on handoff.
 max_tool_rounds = 15
-invocation_ceiling_usd = 3.00  # cumulative across the round loop (backstop if rerouted to Claude)
+invocation_ceiling_usd = 8.00  # raised 3->8 for Opus (cumulative across the round loop)
 
 [agents.code_review]
 model = "claude_sonnet"
@@ -257,7 +324,7 @@ cost_ceiling_usd = 1.00
 # new spend is refused (KICKOFF.md §2: refuse within $5 of the cap).
 #
 [budget]
-monthly_cap_usd = 150.0
+monthly_cap_usd = 200.0  # 2026-06-19: raised 150 -> 200 (operator); ~$72 usable after $123 already spent this month
 hard_floor_buffer_usd = 5.0
 # Cumulative USD ceiling for a SINGLE agent invocation's tool-loop (the sum
 # of all rounds), enforced in runtime/runner.py:_invoke_agent. This is the

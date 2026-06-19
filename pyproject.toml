@@ -31,10 +31,17 @@ dependencies = [
     # MCP client/server SDK (clients/mcp_bridge.py). The <2.0 bound is
     # load-bearing: the 2.0 alpha line has breaking API changes.
     "mcp>=1.27,<2.0",
+    # Web operator console (src/autoscientist/web). Already present transitively
+    # via `mcp`, but pinned explicitly so the console doesn't depend on the
+    # MCP SDK's transitive choices.
+    "starlette>=0.40,<2.0",
+    "uvicorn>=0.30,<1.0",
+    "sse-starlette>=2.1,<4.0",
 ]
 
 [project.scripts]
 autoscientist = "autoscientist.runtime.runner:main"
+autoscientist-web = "autoscientist.web.app:main"
 
 [dependency-groups]
 dev = [

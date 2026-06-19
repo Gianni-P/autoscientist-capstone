@@ -28,7 +28,13 @@ kickoff_payload_path = "projects/math693a-limited-descent/kickoff_payload.json"
 # small (a few hundred lines of NumPy). The code/test loop runs on local
 # qwen2.5:32b via Ollama for ~$0, so paid spend is mostly the science/writing
 # agents.
-project_soft_cap_usd = 20.0
+# 2026-06-18: raised 20 -> 35 -> 45 -> 70. The 70 bump is for a COMPLETE rerun
+# from CP0 (lit_review -> idea_gen -> ... full pipeline) with Opus 4.8 as the
+# coder. A full run adds the science agents (lit_review/idea_gen/idea_critic/
+# methodology on Sonnet/Haiku) on top of the expensive Opus code loop, so it
+# needs more headroom than a code-only re-entry. Lower back to ~20 once a
+# converging configuration is settled.
+project_soft_cap_usd = 190.0  # 2026-06-19: continue-from-code_gen resume; ~$72 monthly headroom is the real limiter
 
 [verify]
 # Pitfall domain to run during stage-3 / stage-4 verification.

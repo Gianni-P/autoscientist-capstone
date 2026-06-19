@@ -25,9 +25,51 @@ uv run python scripts/smoke_phase6.py    # autoresearch / prompt optimization (a
 uv run python scripts/smoke_phase7.py    # domain hardening (pneumonia-relevant medical-imaging pitfalls)
 uv run python scripts/smoke_mcp_github.py # GitHub MCP integration (offline; fake server, no Docker/network)
 
-# 4. Launch the operator console (auto-refreshing activity stream + Pause/Resume)
+# 4. Launch the operator console (snappy, push-based; Apple-style dark UI)
+uv run autoscientist-web            # → http://127.0.0.1:8650
+# (equivalently: uv run python -m autoscientist.web, or
+#  uv run uvicorn autoscientist.web.app:app --port 8650)
+
+# Fallback: the original Streamlit console is still available
 uv run streamlit run src/autoscientist/checkpoints/ui.py
 ```
+
+### Operator console (web)
+
+`autoscientist-web` serves a single-page console that **pushes** state
+changes over Server-Sent Events the moment they land in `autoscientist.db`
+— no polling, so the activity feed, checkpoint stepper, and budget meter
+update within a fraction of a second and every action is an instant
+`fetch`. It reads the same DB and reuses the same Python logic as the
+Streamlit page (`cp_manager`, `runtime.control`, a detached `runner`), so
+the two consoles are behaviourally identical. The ASGI stack (starlette /
+uvicorn / sse-starlette) ships with the `mcp` dependency, so no extra
+install is needed. **Everything below is driveable from the UI alone —
+no terminal needed after launching the console.** Highlights:
+
+* **Start runs** — the **+ New run** button lists the projects under
+  `projects/` (anything with a `config.toml`), prefills the starting agent
+  (`lit_review`) and the project's `kickoff_payload.json` (editable), and
+  launches a detached runner. The new run appears and is selected
+  automatically.
+* **Checkpoint stepper** — the five HITL stages as a live progress rail;
+  the current stage pulses, resolved stages show their verdict, and any
+  stage with a checkpoint is clickable.
+* **Four checkpoint actions** — at every gate you can **Approve** (forward
+  the default payload), **Approve with changes** (either hand-edit the
+  handoff prompt *or* describe a change in plain English), **Re-run with
+  nudge** (re-invoke the agent that produced the checkpoint on its original
+  prompt plus your nudge — it pauses again at the same stage), or **Reject**
+  (stop the run here). Plus a Q&A thread to ask the orchestrator.
+* **Checkpoints history** — the **Checkpoints** tab lists every checkpoint
+  the run has opened; click any to go back and review its payload, your
+  decision, and the Q&A — even on completed runs.
+* **Now running** — the active agent, its latest action, and an
+  Action-needed card when a checkpoint is waiting on you.
+* **Handoffs & Prompts** — per-agent activations showing the exact inbound
+  prompt delivered to each agent (plus a one-click view of that agent's
+  static system prompt) and the `HANDOFF` decision that routed onward.
+* **Activity** — a live terminal-tail of every turn, tool call, and handoff.
 
 For a live agent run rather than smoke testing, see
 [Running a project end-to-end](#running-a-project-end-to-end) below.
@@ -60,12 +102,16 @@ uv run python -m autoscientist.runtime.runner \
 # Terminal B — the operator console
 cd ~/autoscientist
 set -a; source .env; set +a
-uv run streamlit run src/autoscientist/checkpoints/ui.py
-# Open http://localhost:8501
+uv run autoscientist-web
+# Open http://127.0.0.1:8650
+#
+# Fallback (Streamlit): uv run streamlit run src/autoscientist/checkpoints/ui.py
+# → http://localhost:8501
 ```
 
-If `uv` is not on PATH, `.venv/bin/python` and `.venv/bin/streamlit`
-are direct equivalents.
+If `uv` is not on PATH, `.venv/bin/python` (e.g.
+`.venv/bin/python -m autoscientist.web`) and `.venv/bin/streamlit` are
+direct equivalents.
 
 ### Pause and resume
 

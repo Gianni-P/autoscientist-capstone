@@ -21,10 +21,16 @@ AGENT = Agent(
     # prose and burned all 30+ tool rounds in an `execute` debug-loop, never
     # emitting HANDOFF -> runner ended the run "completed" with 0 handoffs and
     # an empty console (runs run_0a07…, run_f6fb98…, run_2773…, 2026-06-11).
-    # With only write_file/pdf_parse it can't debug-spin: it writes files and
-    # hands off to test_gen, which owns running/testing. dataset_fetch removal
-    # also disarms the 50 GB / multi-hour re-download footgun. Restore a tool
-    # here only if code_gen genuinely needs it (it doesn't for the current
-    # math project).
-    tools=("pdf_parse", "write_file"),
+    # With no `execute` it can't debug-spin: it writes files and hands off to
+    # test_gen, which owns running/testing. dataset_fetch removal also disarms
+    # the 50 GB / multi-hour re-download footgun.
+    #
+    # 2026-06-17: added read_sandbox_file + check_imports + handoff (still NO
+    # `execute` — the no-debug-spin invariant is preserved). The phantom-import
+    # failure (importing names no sibling module defines -> ImportError -> review
+    # rejection) is structural: code_gen writes blind. check_imports gives it a
+    # read-only AST signal to catch that before handoff; read_sandbox_file lets
+    # it re-read its own files; handoff is the reliable, parse-proof alternative
+    # to the bare-line `HANDOFF:` directive qwen3-coder routinely failed to emit.
+    tools=("pdf_parse", "write_file", "read_sandbox_file", "check_imports", "handoff"),
 )

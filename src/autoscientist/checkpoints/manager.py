@@ -61,12 +61,23 @@ STAGE_TITLES: dict[int, str] = {
 DECISION_APPROVE = "approve"
 DECISION_REJECT = "reject"
 DECISION_MODIFY = "modify"
-_VALID_DECISIONS = frozenset({DECISION_APPROVE, DECISION_REJECT, DECISION_MODIFY})
+# Re-run: re-invoke the agent that PRODUCED this checkpoint (``from_agent``)
+# with its original inbound plus an operator nudge, instead of advancing to
+# ``to_agent``. The runner reconstructs the inbound and drives a fresh loop
+# from ``from_agent`` (see ``runner.resume_run``). It maps to the ``modified``
+# row status (the checkpoints CHECK constraint only allows
+# pending/approved/rejected/modified) — the *decision* in ``operator_input``
+# is what distinguishes a re-run from an ordinary modify.
+DECISION_RERUN = "rerun"
+_VALID_DECISIONS = frozenset(
+    {DECISION_APPROVE, DECISION_REJECT, DECISION_MODIFY, DECISION_RERUN}
+)
 
 _STATUS_FOR_DECISION = {
     DECISION_APPROVE: "approved",
     DECISION_REJECT: "rejected",
     DECISION_MODIFY: "modified",
+    DECISION_RERUN: "modified",
 }
 
 

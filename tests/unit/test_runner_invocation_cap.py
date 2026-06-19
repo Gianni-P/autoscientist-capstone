@@ -32,15 +32,17 @@ def _run_invocation(tmp_path, monkeypatch, *, per_call_cost, max_tool_rounds,
 
     def fake_route(**kw):
         calls["n"] += 1
-        tcs = (
-            [ToolCall(id=f"t{calls['n']}", name="list_sandbox", input={})]
-            if always_tool_call else []
-        )
+        # The verdict-emission safety net makes one final call with tools
+        # disabled when the loop exhausts its rounds still calling tools.
+        # Mirror reality: with no tools offered, return a terminal verdict.
+        tools_off = kw.get("tools_anthropic") is None and kw.get("tools_openai") is None
+        emit_tool_call = always_tool_call and not tools_off
+        tcs = [ToolCall(id=f"t{calls['n']}", name="list_sandbox", input={})] if emit_tool_call else []
         return CompletionResult(
-            content="" if always_tool_call else "HANDOFF: DONE",
+            content="" if emit_tool_call else "HANDOFF: DONE",
             model="fake", provider="claude",
             prompt_tokens=1000, completion_tokens=1000,
-            finish_reason="tool_use" if always_tool_call else "end_turn",
+            finish_reason="tool_use" if emit_tool_call else "end_turn",
             tool_calls=tcs, cost_usd=per_call_cost,
         )
 
@@ -81,17 +83,19 @@ def test_subceiling_loop_is_bounded_by_invocation_cap(tmp_path, monkeypatch):
 
 def test_high_ceiling_lets_loop_reach_max_rounds(tmp_path, monkeypatch):
     """Control: with the cap effectively off, the loop runs to max_tool_rounds+1
-    route calls. Proves the cap (not another limit) is what bounds the case above."""
+    route calls, then the verdict-emission safety net makes ONE final
+    tools-disabled call (the loop ended still calling tools) = max_tool_rounds+2.
+    Proves the cap (not another limit) is what bounds the case above."""
     monkeypatch.setenv("AUTOSCIENTIST_INVOCATION_CEILING_USD", "100000")
     n = _run_invocation(tmp_path, monkeypatch, per_call_cost=0.20, max_tool_rounds=3)
-    assert n == 4, f"expected max_tool_rounds+1 = 4 calls, got {n}"
+    assert n == 5, f"expected max_tool_rounds+1 + 1 forced verdict = 5 calls, got {n}"
 
 
 def test_disabled_ceiling_does_not_break_loop(tmp_path, monkeypatch):
-    """Ceiling <= 0 disables the cap entirely."""
+    """Ceiling <= 0 disables the cap entirely (4 loop calls + 1 forced verdict)."""
     monkeypatch.setenv("AUTOSCIENTIST_INVOCATION_CEILING_USD", "0")
     n = _run_invocation(tmp_path, monkeypatch, per_call_cost=5.0, max_tool_rounds=3)
-    assert n == 4, f"expected disabled cap to let loop run to 4, got {n}"
+    assert n == 5, f"expected disabled cap to let loop run to 5, got {n}"
 
 
 def test_no_tool_calls_returns_after_one_call(tmp_path, monkeypatch):

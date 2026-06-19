@@ -47,12 +47,13 @@ from autoscientist.runtime import control as run_control
 from autoscientist.runtime.agent import Agent, load_prompt
 from autoscientist.runtime.config import Config, load_config
 from autoscientist.runtime.handoff import DONE, Handoff, parse_handoff
-from autoscientist.runtime.project_context import inject_project_context
 from autoscientist.runtime.payload_files import (
     build_code_review_payload_from_sandbox,
     build_paper_writer_payload_from_sandbox,
+    build_peer_reviewer_payload_from_sandbox,
     persist_files_from_payload,
 )
+from autoscientist.runtime.project_context import inject_project_context
 from autoscientist.state.db import (
     end_run,
     open_db,
@@ -236,6 +237,34 @@ def _is_thin_paper_writer_payload(payload: str) -> bool:
         if not has_rows and not has_numbers:
             return True
     return False
+
+
+def _is_thin_peer_reviewer_payload(payload: str) -> bool:
+    """True when an inbound peer_reviewer payload carries no draft to review.
+
+    peer_reviewer reviews the ``{draft, supplementary, context}`` envelope.
+    When paper_writer derails (e.g. loops on a failed ``latex_compile`` and
+    emits empty content — run_fe002213…, 2026-06-19) the handoff is empty and
+    peer_reviewer just asks for the draft, degenerating CP5. Treat as thin so
+    the runner rebuilds the input from paper_writer's last real draft + sandbox.
+
+    Thin ONLY when the handoff is essentially empty: empty/whitespace; or a
+    short payload whose JSON carries no draft. A *large* payload is reviewable
+    as-is and is never thin — even a draft truncated at max_tokens (which can
+    parse to a stray nested object like a single citation) is real content the
+    reviewer should see, so thinness is never decided from the first JSON
+    object when the text is large (run_fe002213…, 2026-06-19).
+    """
+    if not payload or not payload.strip():
+        return True
+    if len(payload.strip()) >= _THIN_REVIEW_PAYLOAD_CHARS:
+        return False
+    parsed = _maybe_parse_json(payload)
+    if isinstance(parsed, dict):
+        draft = parsed.get("draft") or parsed.get("paper") or parsed.get("sections")
+        return draft in (None, {}, [], "")
+    return True
+
 
 # Cumulative USD ceiling for a SINGLE agent invocation's tool-loop. The
 # per-call cost_ceiling_usd (router) bounds one call; this bounds the SUM
@@ -798,6 +827,26 @@ def _fetch_plan_and_validator(conn, run_id: str) -> tuple[str | None, object]:
     return plan_text, validator_summary
 
 
+def _fetch_paper_draft(conn, run_id: str) -> str | None:
+    """paper_writer's most recent *non-empty* assistant message (the draft).
+
+    Used to rebuild peer_reviewer's input when paper_writer hands off empty: an
+    earlier paper_writer turn produced a real draft even if the final one was
+    blank, so the most recent substantive output is the right thing to review.
+    Never raises.
+    """
+    try:
+        row = conn.execute(
+            "SELECT content FROM messages WHERE run_id=? AND agent_name='paper_writer' "
+            "AND role='assistant' AND TRIM(content) != '' "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        return row[0] if row is not None and row[0] else None
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
 def _drive_loop(
     *,
     conn,
@@ -914,6 +963,37 @@ def _drive_loop(
                         thin_payload_chars=len((current_payload or "").strip()),
                         had_plan=bool(plan_text),
                         had_validator_summary=validator_summary is not None,
+                    )
+                    inbound_text = rebuilt
+
+            # peer_reviewer reviews paper_writer's {draft, ...} envelope. When
+            # paper_writer derails (e.g. loops on a failed latex_compile and
+            # emits empty content — run_fe002213…, 2026-06-19) the handoff is
+            # empty and peer_reviewer just asks for the draft → a degenerate CP5.
+            # Rebuild its input from paper_writer's last real draft (DB) plus the
+            # run's plan + validator summary so the review always runs.
+            if current_agent_name == "peer_reviewer" and _is_thin_peer_reviewer_payload(
+                current_payload or ""
+            ):
+                projects_root = cfg.root / cfg.default.get("paths", {}).get(
+                    "projects_dir", "projects"
+                )
+                draft_text = _fetch_paper_draft(conn, run_id)
+                plan_text, validator_summary = _fetch_plan_and_validator(conn, run_id)
+                rebuilt = build_peer_reviewer_payload_from_sandbox(
+                    project_id=project_id,
+                    projects_root=projects_root,
+                    draft_text=draft_text,
+                    plan_text=plan_text,
+                    validator_summary=validator_summary,
+                )
+                if rebuilt:
+                    log.warning(
+                        "run.peer_reviewer_payload_reconstructed",
+                        agent=current_agent_name,
+                        chars=len(rebuilt),
+                        thin_payload_chars=len((current_payload or "").strip()),
+                        had_draft=bool(draft_text),
                     )
                     inbound_text = rebuilt
 
@@ -1231,6 +1311,37 @@ def run(
         conn.close()
 
 
+_NUDGE_RE = re.compile(r"\n\nOPERATOR_NUDGE:.*\Z", re.S)
+
+
+def _latest_inbound_for_agent(
+    conn, run_id: str, agent_name: str
+) -> str | None:
+    """The most recent ``role='user'`` payload delivered to ``agent_name``.
+
+    This is the exact text the agent last ran on (``_invoke_agent`` records it
+    before the tool loop), so replaying it re-runs the agent faithfully. Used
+    by the operator "re-run with nudge" path.
+    """
+    row = conn.execute(
+        "SELECT content FROM messages WHERE run_id = ? AND agent_name = ? "
+        "AND role = 'user' ORDER BY rowid DESC LIMIT 1",
+        (run_id, agent_name),
+    ).fetchone()
+    return row["content"] if row else None
+
+
+def _apply_nudge(inbound: str | None, nudge: str | None) -> str:
+    """Append an ``OPERATOR_NUDGE`` block, replacing any prior one.
+
+    Repeated re-runs replace (not stack) the nudge so the inbound doesn't grow
+    unbounded across successive operator re-runs.
+    """
+    base = _NUDGE_RE.sub("", inbound or "")
+    nudge = (nudge or "").strip()
+    return f"{base}\n\nOPERATOR_NUDGE: {nudge}" if nudge else base
+
+
 def resume_run(
     run_id: str,
     *,
@@ -1329,6 +1440,60 @@ def resume_run(
         cp = checkpoints.latest_checkpoint(conn, run_id)
         if cp is None:
             raise RuntimeError(f"run {run_id} is paused but has no checkpoint")
+
+        # --- Path 2a: operator "re-run with nudge" -------------------------
+        # The checkpoint was resolved with decision='rerun': re-invoke the
+        # agent that produced it (cp.from_agent) on its original inbound plus
+        # the operator's nudge, then let it pause again at the same stage.
+        op = cp.operator_input or {}
+        if cp.status != "pending" and op.get("decision") == checkpoints.DECISION_RERUN:
+            from_agent = cp.from_agent
+            nudge = op.get("instructions") or ""
+            inbound = _latest_inbound_for_agent(conn, run_id, from_agent) or cp.default_payload
+            starting_payload = _apply_nudge(inbound, nudge)
+            log.info(
+                "run.resume_rerun",
+                checkpoint_id=cp.checkpoint_id,
+                stage=cp.stage,
+                rerun_agent=from_agent,
+                nudge_chars=len(nudge),
+            )
+            record_message(
+                conn,
+                run_id=run_id,
+                agent_name=from_agent or "checkpoint",
+                role="handoff",
+                content=json.dumps({
+                    "checkpoint_id": cp.checkpoint_id,
+                    "stage": cp.stage,
+                    "decision": "rerun",
+                    "next_agent": from_agent,
+                    "nudge": nudge,
+                }),
+            )
+            run_control.cancel_pause_request(conn, run_id)
+            conn.execute(
+                "UPDATE runs SET status = 'running', ended_at = NULL WHERE run_id = ?",
+                (run_id,),
+            )
+            conn.commit()
+            final_status, note, handoffs = _drive_loop(
+                conn=conn,
+                cfg=cfg,
+                log=log,
+                run_id=run_id,
+                project_id=project_id,
+                starting_agent=from_agent,
+                starting_payload=starting_payload,
+                max_handoffs=max_handoffs,
+                max_tool_rounds=max_tool_rounds,
+                enable_checkpoints=True,
+            )
+            end_run(conn, run_id, final_status, note)
+            conn.commit()
+            log.info("run.end", status=final_status, handoffs=handoffs, note=note)
+            return run_id
+
         if cp.status == "pending":
             raise RuntimeError(
                 f"checkpoint {cp.checkpoint_id} is still pending — resolve it first"

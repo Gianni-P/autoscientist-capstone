@@ -332,12 +332,56 @@ def _h_dataset_fetch(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         return {"fetched": False, "skipped_reason": str(e)}
 
 
+def _load_tex_fallback(ctx: ToolContext, tex_path: str | None) -> str | None:
+    """Recover LaTeX source from disk when the model omits ``tex_source``.
+
+    A recurring failure mode: paper_writer calls ``latex_compile`` with empty
+    args (it expects the tool to compile a file it already wrote), gets
+    ``requires 'tex_source'``, and loops to exhaustion (run_fe002213…,
+    2026-06-19). Rather than fail-hard, look for the source on disk: an explicit
+    ``tex_path`` (resolved within the project dir), else the most-recent
+    non-skeleton ``.tex`` under the project's ``sandbox/`` or ``latex/``.
+    Returns the source string, or ``None`` if nothing is found. Never raises.
+    """
+    if ctx.projects_root is None or ctx.project_id is None:
+        return None
+    try:
+        project_dir = (ctx.projects_root / ctx.project_id).resolve()
+        candidates: list = []
+        if tex_path:
+            p = (project_dir / tex_path).resolve()
+            if project_dir in p.parents and p.is_file() and p.suffix == ".tex":
+                candidates = [p]
+        if not candidates:
+            for sub in ("sandbox", "latex"):
+                d = project_dir / sub
+                if d.is_dir():
+                    candidates.extend(
+                        q for q in d.rglob("*.tex") if "skeleton" not in q.name.lower()
+                    )
+        if not candidates:
+            return None
+        preferred = [p for p in candidates if p.name.lower() == "paper.tex"] or candidates
+        best = max(preferred, key=lambda p: p.stat().st_mtime)
+        return best.read_text(encoding="utf-8", errors="replace") or None
+    except Exception:
+        return None
+
+
 def _h_latex_compile(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     from autoscientist.tools import latex
 
     tex = inp.get("tex_source")
     if not tex:
-        raise ValueError("latex_compile requires 'tex_source'")
+        # Resilience: recover the source from disk (an explicit tex_path, or a
+        # .tex the agent already wrote to the sandbox) instead of failing.
+        tex = _load_tex_fallback(ctx, inp.get("tex_path"))
+    if not tex:
+        raise ValueError(
+            "latex_compile requires 'tex_source' (the full LaTeX string). "
+            "Alternatively pass 'tex_path' to a .tex you wrote with write_file, "
+            "or write the .tex under the project sandbox first."
+        )
     if ctx.projects_root is None or ctx.project_id is None:
         raise ValueError("latex_compile needs project context")
     out_dir = ctx.projects_root / ctx.project_id / "latex" / inp.get("job_name", "paper")
@@ -356,13 +400,36 @@ def _h_latex_compile(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
 
 
 def _h_citation_check(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
-    from autoscientist.tools import citation_check
+    from autoscientist.tools import citation_check, tool_cache
 
     citation = inp.get("citation")
     if not citation:
         raise ValueError("citation_check requires 'citation' object")
+
+    # Cache by citation content + short-circuit repeats. Verifying the SAME
+    # citation is deterministic, but paper_writer (stateless between turns) was
+    # re-checking already-verified references every tool round — 73 calls in one
+    # run, Nash2007 x15 — each an expensive model round (run_fe002213…,
+    # 2026-06-19). On a repeat we return the cached result plus a firm note so
+    # the agent stops re-verifying and writes the draft.
+    ckey = tool_cache.cache_key(citation) if ctx.conn is not None else None
+    if ckey is not None:
+        cached = tool_cache.cache_get(ctx.conn, "citation_check", ckey)
+        if cached is not None:
+            cached = dict(cached)
+            cached["_note"] = (
+                "ALREADY CHECKED — this exact citation was verified earlier; the "
+                "result below is cached. Do NOT call citation_check on it again. "
+                "Use it (or drop the reference if verified=false) and proceed to "
+                "writing the draft and emitting HANDOFF."
+            )
+            return cached
+
     chk = citation_check.verify_citation(citation, conn=ctx.conn)
-    return chk.to_dict()
+    res = chk.to_dict()
+    if ckey is not None:
+        tool_cache.cache_put(ctx.conn, "citation_check", ckey, res)
+    return res
 
 
 def _h_write_file(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
@@ -580,16 +647,30 @@ def _register_defaults() -> None:
     register(ToolSpec(
         name="latex_compile",
         description=(
-            "Compile LaTeX source to PDF using tectonic. Returns success flag, "
-            "pdf_path, and parsed errors/warnings."
+            "Compile LaTeX source to PDF using tectonic. Pass the COMPLETE "
+            "LaTeX document as 'tex_source' (an empty call does nothing). "
+            "Alternatively, if you already wrote the .tex to the sandbox with "
+            "write_file, pass its 'tex_path' (or omit both and the latest .tex "
+            "in the project is used). Returns success flag, pdf_path, and "
+            "parsed errors/warnings."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "tex_source": {"type": "string"},
+                "tex_source": {
+                    "type": "string",
+                    "description": "Full LaTeX document source to compile.",
+                },
+                "tex_path": {
+                    "type": "string",
+                    "description": (
+                        "Alternative to tex_source: path (relative to the project "
+                        "dir) of a .tex file you already wrote with write_file."
+                    ),
+                },
                 "job_name": {"type": "string", "default": "paper"},
             },
-            "required": ["tex_source"],
+            "required": [],
         },
         handler=_h_latex_compile,
     ))

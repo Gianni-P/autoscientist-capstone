@@ -34,9 +34,10 @@ from autoscientist.clients.base import (
 from autoscientist.clients.cache import cache_key, get_cached, put_cached
 from autoscientist.runtime.budget import (
     BudgetConfig,
-    assert_can_spend,
-    assert_project_budget,
+    reconcile_charge,
     record_charge,
+    release_reservation,
+    reserve_charge,
 )
 from autoscientist.runtime.config import Config, load_config
 
@@ -209,10 +210,9 @@ def route(
             f"${agent.cost_ceiling_usd:.4f}"
         )
 
-    if estimated_cost > 0:
-        assert_can_spend(conn, bcfg, estimated_cost)
-
-    # Per-project soft cap (reads project config.toml if project_id given).
+    # Resolve the per-project soft cap (projects/<id>/config.toml) up front so
+    # the reservation below enforces it atomically alongside the monthly cap.
+    project_soft_cap = 0.0
     if project_id and estimated_cost > 0:
         project_cfg_path = cfg.root / "projects" / project_id / "config.toml"
         if project_cfg_path.exists():
@@ -220,42 +220,62 @@ def route(
             try:
                 with project_cfg_path.open("rb") as f:
                     pcfg = tomllib.load(f)
-                soft_cap = float(pcfg.get("budget", {}).get("project_soft_cap_usd", 0))
+                project_soft_cap = float(pcfg.get("budget", {}).get("project_soft_cap_usd", 0))
             except (tomllib.TOMLDecodeError, ValueError, TypeError) as e:
                 # A malformed project config.toml must not abort the whole run;
                 # fall back to no soft cap (the monthly hard cap still applies).
                 log.warning("router.project_config_unreadable",
                             project_id=project_id, error=str(e))
-                soft_cap = 0.0
-            if soft_cap > 0:
-                assert_project_budget(conn, project_id, soft_cap, estimated_cost)
+                project_soft_cap = 0.0
+
+    # Reserve-before-call: atomically check the monthly + per-project caps AND
+    # write the estimated charge under one write lock, so two concurrent callers
+    # can't both pass a stale read and overshoot the cap. Reconciled to the real
+    # cost after the call, or released if the call never bills.
+    reservation_id: int | None = None
+    if estimated_cost > 0:
+        reservation_id = reserve_charge(
+            conn,
+            run_id=run_id, agent_name=agent_name,
+            provider=model.provider, model=model.model_id,
+            estimated_cost_usd=estimated_cost, cfg=bcfg,
+            project_id=project_id, project_soft_cap_usd=project_soft_cap,
+        )
 
     started = time.monotonic()
-    if model.provider == "claude":
-        result = claude_client.complete(
-            model=model.model_id, system=system, messages=messages,
-            max_tokens=max_tokens, temperature=temperature,
-            tools=tools_anthropic,
-        )
-    elif model.provider == "ollama":
-        result = ollama_client.complete(
-            model=model.model_id, system=system, messages=messages,
-            max_tokens=max_tokens, temperature=temperature,
-            tools=tools_openai,
-            no_think=model.no_think,
-            base_url=_ollama_base_url(cfg),
-        )
-    elif model.provider == "mock":
-        from autoscientist.clients import mock as mock_client
-        # Mock accepts either schema; pass whichever was built.
-        mock_tools = tools_anthropic or tools_openai
-        result = mock_client.complete(
-            agent_name=agent_name, model=model.model_id, system=system,
-            messages=messages, max_tokens=max_tokens, temperature=temperature,
-            tools=mock_tools,
-        )
-    else:
-        raise UnknownModel(f"unsupported provider: {model.provider}")
+    try:
+        if model.provider == "claude":
+            result = claude_client.complete(
+                model=model.model_id, system=system, messages=messages,
+                max_tokens=max_tokens, temperature=temperature,
+                tools=tools_anthropic,
+            )
+        elif model.provider == "ollama":
+            result = ollama_client.complete(
+                model=model.model_id, system=system, messages=messages,
+                max_tokens=max_tokens, temperature=temperature,
+                tools=tools_openai,
+                no_think=model.no_think,
+                base_url=_ollama_base_url(cfg),
+            )
+        elif model.provider == "mock":
+            from autoscientist.clients import mock as mock_client
+            # Mock accepts either schema; pass whichever was built.
+            mock_tools = tools_anthropic or tools_openai
+            result = mock_client.complete(
+                agent_name=agent_name, model=model.model_id, system=system,
+                messages=messages, max_tokens=max_tokens, temperature=temperature,
+                tools=mock_tools,
+            )
+        else:
+            raise UnknownModel(f"unsupported provider: {model.provider}")
+    except BaseException:
+        # The call produced no billable output — drop the reservation so a
+        # failed / interrupted call doesn't leave a phantom charge on the ledger.
+        if reservation_id is not None:
+            release_reservation(conn, reservation_id)
+            conn.commit()
+        raise
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
     actual_cost = call_cost_usd(
@@ -277,14 +297,24 @@ def route(
     # single agent invocation (per-invocation budget cap in _invoke_agent).
     result.cost_usd = actual_cost
 
-    record_charge(
-        conn,
-        run_id=run_id, agent_name=agent_name,
-        provider=model.provider, model=model.model_id,
-        prompt_tokens=result.prompt_tokens,
-        completion_tokens=result.completion_tokens,
-        cost_usd=actual_cost, cache_hit=False,
-    )
+    # Settle the reservation to the real cost (or, for a $0-estimate call that
+    # was never reserved, record the actual charge now).
+    if reservation_id is not None:
+        reconcile_charge(
+            conn, reservation_id,
+            cost_usd=actual_cost,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+        )
+    else:
+        record_charge(
+            conn,
+            run_id=run_id, agent_name=agent_name,
+            provider=model.provider, model=model.model_id,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cost_usd=actual_cost, cache_hit=False,
+        )
 
     request_blob = {
         "system": system, "messages": messages, "model": model.model_id,

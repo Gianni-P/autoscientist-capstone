@@ -36,19 +36,24 @@ def cache_key(payload: Any) -> str:
 
 
 def cache_get(conn: sqlite3.Connection, tool_name: str, key: str) -> Any | None:
+    # row[0] (positional) rather than row["payload"] so this works regardless of
+    # whether the caller set a Row row_factory.
     row = conn.execute(
         "SELECT payload FROM tool_cache WHERE tool_name = ? AND cache_key = ?",
         (tool_name, key),
     ).fetchone()
     if row is None:
         return None
+    # Bump the hit counter, but do NOT commit here: a read with a side effect
+    # that commits would prematurely flush the caller's in-flight transaction
+    # (the runner accumulates record_message writes mid-invocation). The counter
+    # is best-effort analytics and rides the caller's next commit.
     conn.execute(
         "UPDATE tool_cache SET hit_count = hit_count + 1, last_hit_at = ? "
         "WHERE tool_name = ? AND cache_key = ?",
         (now_iso(), tool_name, key),
     )
-    conn.commit()
-    return json.loads(row["payload"])
+    return json.loads(row[0])
 
 
 def cache_put(conn: sqlite3.Connection, tool_name: str, key: str, payload: Any) -> None:

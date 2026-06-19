@@ -33,8 +33,10 @@ backed by ``st.session_state``.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
-import threading
+import subprocess
+import sys
 from contextlib import closing
 from typing import Any
 
@@ -46,7 +48,6 @@ from autoscientist.runtime.budget import BudgetConfig, monthly_spent
 from autoscientist.runtime.config import load_config
 from autoscientist.state.db import month_key as get_month_key
 from autoscientist.state.db import open_db
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,27 +84,45 @@ def _go_to_checkpoint(cp_id: str) -> None:
     st.rerun()
 
 
-def _resume_in_thread(run_id: str) -> None:
-    """Kick off a resume on a background thread.
+def _resume_command(run_id: str) -> list[str]:
+    """Argv for resuming a run as its own process (`runner --resume <id>`)."""
+    return [sys.executable, "-m", "autoscientist.runtime.runner", "--resume", run_id]
 
-    Streamlit blocks the main thread on rerun, so doing the resume
-    inline freezes the page until every downstream agent completes.
-    A thread keeps the UI responsive and the operator can refresh to
-    see the next checkpoint when it pauses.
+
+def _resume_in_background(run_id: str) -> None:
+    """Launch a resume as a DETACHED subprocess so it outlives the UI.
+
+    Doing the resume inline would freeze the Streamlit page until every
+    downstream agent completes; the previous implementation used a daemon
+    thread, but the OS kills a daemon thread when the Streamlit process exits
+    or restarts — leaving the run wedged in 'running' (un-resumable). The runner
+    already runs standalone via ``--resume <run_id>`` (the documented two-process
+    model), so we spawn that in a new session: it keeps driving the chain, writes
+    its own ``runs/<run_id>/logs/run.jsonl``, and updates run status in the DB
+    that the UI polls — independent of this process's lifecycle. A duplicate
+    launch is harmless: the second resume_run sees status != 'paused' and exits.
     """
-    from autoscientist.runtime.runner import resume_run
+    from autoscientist.runtime.config import load_config
 
-    def _go() -> None:
-        try:
-            resume_run(run_id)
-        except Exception as e:  # noqa: BLE001 — surface in logs
-            import structlog
-            structlog.get_logger("autoscientist.ui").exception(
-                "ui.resume_failed", run_id=run_id, error=str(e)
-            )
-
-    t = threading.Thread(target=_go, name=f"resume-{run_id}", daemon=True)
-    t.start()
+    cmd = _resume_command(run_id)
+    popen_kwargs: dict[str, Any] = {
+        "cwd": str(load_config().root),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "posix":
+        # New session so the child isn't in Streamlit's process group and
+        # survives the server going away.
+        popen_kwargs["start_new_session"] = True
+    try:
+        subprocess.Popen(cmd, **popen_kwargs)
+    except Exception as e:
+        # Never crash the page if the launch fails; surface it in the logs.
+        import structlog
+        structlog.get_logger("autoscientist.ui").exception(
+            "ui.resume_launch_failed", run_id=run_id, error=str(e)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +476,7 @@ def _render_run_controls(
     if pause is not None and pause.is_active:
         if col1.button("▶ Resume", key=f"resume_{run_id}",
                        use_container_width=True, type="primary"):
-            _resume_in_thread(run_id)
+            _resume_in_background(run_id)
             st.toast("Resuming run in the background.", icon="▶")
             st.rerun(scope="fragment")
         col3.caption(
@@ -840,7 +859,7 @@ def render_resolver(conn: sqlite3.Connection, cp_id: str) -> None:
                     st.error("Rejected. Calling resume to mark the run cancelled.")
                 else:
                     st.success("Resolved. Resuming the run in the background.")
-                _resume_in_thread(cp.run_id)
+                _resume_in_background(cp.run_id)
                 _go_to_console()
                 return
     else:
@@ -964,4 +983,16 @@ def main() -> None:
         conn.close()
 
 
-main()
+def _running_under_streamlit() -> bool:
+    """True when executed by ``streamlit run`` (a script-run context exists)."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        return get_script_run_ctx() is not None
+    except Exception:
+        return False
+
+
+# Render only when actually launched (streamlit run, or `python ui.py`), NOT on
+# a plain import — so the module's helpers can be imported and unit-tested.
+if __name__ == "__main__" or _running_under_streamlit():
+    main()

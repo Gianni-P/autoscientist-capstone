@@ -32,6 +32,7 @@ import argparse
 import json
 import logging as stdlib_logging
 import os
+import re
 import sys
 import time
 from dataclasses import replace
@@ -123,6 +124,35 @@ _FORWARD_TARGET: dict[str, str] = {
     "results_validator": "paper_writer",
     "paper_writer": "peer_reviewer",
 }
+
+
+def _norm_agent_name(name: str) -> str:
+    """Collapse an agent name to alnum-lowercase for tolerant matching.
+
+    Lets an off-topology handoff target that is merely a formatting/typo variant
+    of an allowed target (``code-gen`` / ``CodeGen`` / ``code gen``) snap back
+    to the real one instead of being treated as a hallucinated destination.
+    """
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _resolve_off_topology(
+    from_agent: str, to_agent: str, handoff_targets: tuple[str, ...]
+) -> str | None:
+    """Correct an off-topology handoff target.
+
+    Returns an allowed target when ``to_agent`` is just a formatting/typo variant
+    of one (normalized match); otherwise the agent's forward stage; otherwise
+    ``None`` (a terminal agent named a bogus target → end the run). Never returns
+    the bogus ``to_agent`` itself, so a hallucinated destination can't route the
+    pipeline off its declared rails.
+    """
+    snapped = next(
+        (t for t in handoff_targets
+         if _norm_agent_name(t) == _norm_agent_name(to_agent)),
+        None,
+    )
+    return snapped or _FORWARD_TARGET.get(from_agent)
 
 # Below this length, a code_review payload with no file/review structure is
 # treated as "thin" (nothing substantive to review) and rebuilt from the
@@ -1012,12 +1042,25 @@ def _drive_loop(
                 and handoff.to_agent != DONE
                 and handoff.to_agent not in agent.handoff_targets
             ):
+                # The model named a successor this agent isn't allowed to hand
+                # to. Don't blindly follow a hallucinated target (it can skip
+                # stages or jump anywhere in the pipeline): snap to an allowed
+                # variant, else redirect to the forward stage, else (terminal
+                # agent) end the run cleanly.
+                corrected = _resolve_off_topology(
+                    current_agent_name, handoff.to_agent, agent.handoff_targets
+                )
                 log.warning(
                     "run.handoff_off_topology",
                     from_agent=current_agent_name,
                     to_agent=handoff.to_agent,
                     allowed=list(agent.handoff_targets),
+                    corrected_to=corrected,
                 )
+                if corrected is None:
+                    log.info("run.off_topology_terminal", agent=current_agent_name)
+                    break
+                handoff = replace(handoff, to_agent=corrected)
 
             stage_info = (
                 checkpoints.stage_for_agent(current_agent_name, handoff_to=handoff.to_agent)

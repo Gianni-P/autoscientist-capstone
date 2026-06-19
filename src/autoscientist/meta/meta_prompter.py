@@ -154,6 +154,8 @@ def propose_variants(
     n_variants: int = 3,
     rubric_dims: tuple[str, ...] = (),
     cfg: Config | None = None,
+    project_id: str | None = None,
+    run_id: str | None = None,
 ) -> list[PromptVariant]:
     """Run one meta-prompter call.
 
@@ -174,6 +176,8 @@ def propose_variants(
         system=system,
         messages=messages,
         cfg=cfg,
+        project_id=project_id,
+        run_id=run_id,
     )
     variants = _parse_variants(result.content)
     log.info(

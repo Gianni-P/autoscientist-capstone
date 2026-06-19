@@ -11,7 +11,7 @@ See `KICKOFF.md` for the full project brief, architectural principles, build pha
 echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc && source ~/.bashrc
 
 # 2. Sync deps
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 uv sync
 
 # 3. Smoke test the runtime (no API spend on second run — should hit cache)
@@ -46,19 +46,19 @@ the Streamlit console.
 
 ```bash
 # Terminal A — the runner
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 set -a; source .env; set +a   # picks up ANTHROPIC_API_KEY etc.
-PAYLOAD=$(cat projects/<project-id>/kickoff_payload.json) # project-id = pnuemonia-data-efficiency-v2
+PAYLOAD=$(cat projects/<project-id>/kickoff_payload.json) # e.g. project-id = pneumonia-data-efficiency
 uv run python -m autoscientist.runtime.runner \
     --agent lit_review \
-    --project <project-id> \  
+    --project <project-id> \
     --payload "$PAYLOAD"
 # Note the printed run_id — you'll need it for resume.
 ```
 
 ```bash
 # Terminal B — the operator console
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 set -a; source .env; set +a
 uv run streamlit run src/autoscientist/checkpoints/ui.py
 # Open http://localhost:8501
@@ -180,6 +180,6 @@ When you are ready for the live run:
 3. Use the launch / pause / resume / abort commands from
    [Running a project end-to-end](#running-a-project-end-to-end) above.
 4. The project lives under `projects/pneumonia-data-efficiency/`
-   (kickoff payload, per-project config, sandbox). A second comparable
+   (kickoff payload, per-project config, sandbox). A narrower follow-up
    attempt with the post-fix runtime is set up at
-   `projects/pneumonia-data-efficiency-v2/`.
+   `projects/pneumonia-backhalf-slice/`.

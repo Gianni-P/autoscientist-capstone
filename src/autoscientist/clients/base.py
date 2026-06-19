@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -83,7 +84,23 @@ def estimate_prompt_tokens(system: str | None, messages: list[dict[str, Any]]) -
             total_chars += len(content)
         elif isinstance(content, list):
             for block in content:
-                text = block.get("text") if isinstance(block, dict) else None
+                if not isinstance(block, dict):
+                    total_chars += len(str(block))
+                    continue
+                # Count every payload-bearing field, not just 'text'. In the
+                # tool loop the bulk of the prompt is re-sent as tool_use blocks
+                # (payload in 'input') and tool_result blocks (payload in
+                # 'content', which carries no 'text' key). Counting only 'text'
+                # collapsed the estimate toward zero and defeated the pre-call
+                # cost-ceiling / budget gate on the most expensive path.
+                text = block.get("text")
                 if text:
                     total_chars += len(text)
+                if "input" in block:
+                    total_chars += len(json.dumps(block["input"], default=str))
+                tr_content = block.get("content")
+                if isinstance(tr_content, str):
+                    total_chars += len(tr_content)
+                elif tr_content is not None:
+                    total_chars += len(json.dumps(tr_content, default=str))
     return max(1, total_chars // 4)

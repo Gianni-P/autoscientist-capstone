@@ -44,7 +44,9 @@ def list_sandbox(
     if rel_subdir.is_absolute():
         raise SandboxEscape(f"subdir must be relative, got: {subdir}")
     start = (sandbox / rel_subdir).resolve()
-    if not str(start).startswith(str(sandbox.resolve())):
+    # Real path-boundary containment (not a string prefix, which would accept a
+    # prefix-colliding sibling like ``../sandbox_x``).
+    if not start.is_relative_to(sandbox.resolve()):
         raise SandboxEscape(f"subdir escapes sandbox: {subdir}")
     if not start.exists():
         return {"root": str(start), "entries": [], "count": 0, "truncated": False}

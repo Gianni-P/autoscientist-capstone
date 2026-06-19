@@ -156,6 +156,16 @@ class MCPServerConnection:
         """
         if self._thread is not None:
             raise MCPBridgeError(f"connection '{self.name}' already started")
+        # Reset handshake state so a RESTART (after a prior stop()) actually
+        # waits for the new loop's handshake. _ready persists across runs (it's
+        # created once via default_factory); without clearing it, _ready.wait()
+        # below returns instantly on the previous run's set flag and _ready_ok
+        # carries a stale True.
+        self._ready.clear()
+        self._ready_ok = False
+        self._error = None
+        self._tools = []
+        self._server_info = {}
         self._thread = threading.Thread(
             target=self._run_loop, name=f"mcp-{self.name}", daemon=True
         )

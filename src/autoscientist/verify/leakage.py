@@ -200,10 +200,16 @@ def check_target_leakage(
         )
     target_floats = _to_floats(target_list)
     target_set = set(target_list)
-    is_binary = target_set <= {0, 1}
-    target_bin = (
-        [int(bool(t)) for t in target_list] if is_binary else None
-    )
+    # Treat ANY two-class target as binary, not only {0,1}: {-1,1}, {1,2},
+    # bool, {'pos','neg'} etc. Map the two classes onto {0,1} so the
+    # single-feature perfect-classification leakage signal still runs. The
+    # threshold-accuracy check is polarity-symmetric, so the mapping direction
+    # is irrelevant. (key=str avoids TypeError on heterogeneous label types.)
+    if len(target_set) == 2:
+        classes = sorted(target_set, key=str)
+        target_bin: list[int] | None = [0 if t == classes[0] else 1 for t in target_list]
+    else:
+        target_bin = None
 
     suspicious: list[dict[str, Any]] = []
     for fname, fvals in features.items():

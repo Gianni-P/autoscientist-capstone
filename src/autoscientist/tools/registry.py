@@ -8,10 +8,10 @@ contract, and Python handler. The registry exposes:
   * ``openai_schemas(specs)``    — list of dicts in OpenAI tool-calling shape.
   * ``dispatch(name, input, ctx)`` — run the handler and return a JSON-safe dict.
 
-The runner (``runtime/runner.py``) calls these. Per agent, only the names
-declared in ``Agent.handoff_targets``... wait, ``Agent.tools`` are exposed
-to the LLM. Other tools are *not* visible to that agent — capability
-restriction at the schema layer is the whole point.
+The runner (``runtime/runner.py``) calls these. Per agent, only the tools
+declared in ``Agent.tools`` are exposed to the LLM. Other tools are *not*
+visible to that agent — capability restriction at the schema layer is the
+whole point.
 
 Handlers receive a :class:`ToolContext` carrying the SQLite connection,
 project root, and config so they can use the same caches the direct
@@ -206,7 +206,11 @@ def _h_literature_search(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any
     query = str(inp.get("query", "")).strip()
     if not query:
         raise ValueError("literature_search requires a non-empty query")
-    limit = int(inp.get("limit", 10))
+    try:
+        limit = int(inp.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 25))  # bound model-supplied limit
     include_arxiv = bool(inp.get("include_arxiv", False))
     papers = literature.search(
         query, limit=limit, include_arxiv=include_arxiv, conn=ctx.conn,
@@ -255,13 +259,30 @@ def _h_execute(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     cmd = inp.get("cmd")
     if not cmd or not isinstance(cmd, list):
         raise ValueError("execute requires 'cmd' as a non-empty list of strings")
+
+    def _capped(key: str, default: int) -> int:
+        """Model may only TIGHTEN a resource limit, never loosen it.
+
+        A malformed or out-of-range value (incl. 0/neg, which would mean
+        'no cap') falls back to the configured default ceiling rather than
+        crashing the tool call or removing the limit.
+        """
+        raw = inp.get(key)
+        if raw is None:
+            return default
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return min(n, default) if n > 0 else default
+
     res = ex.execute(
         cmd,
         project_id=ctx.project_id,
         projects_root=ctx.projects_root,
-        timeout_seconds=int(inp.get("timeout_seconds", ex.DEFAULT_TIMEOUT_SECONDS)),
-        cpu_seconds=int(inp.get("cpu_seconds", ex.DEFAULT_CPU_SECONDS or 0)) or None,
-        memory_bytes=int(inp.get("memory_bytes", ex.DEFAULT_MEMORY_BYTES or 0)) or None,
+        timeout_seconds=_capped("timeout_seconds", ex.DEFAULT_TIMEOUT_SECONDS),
+        cpu_seconds=_capped("cpu_seconds", ex.DEFAULT_CPU_SECONDS),
+        memory_bytes=_capped("memory_bytes", ex.DEFAULT_MEMORY_BYTES),
     )
     # Truncate stdout/stderr returned to the model.
     out = res.to_dict()
@@ -412,6 +433,31 @@ def _h_write_release_file(inp: dict[str, Any], ctx: ToolContext) -> dict[str, An
     )
 
 
+def _h_check_imports(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    from autoscientist.tools import check_imports as ci
+
+    if ctx.project_id is None or ctx.projects_root is None:
+        raise ValueError("check_imports requires project_id and projects_root in context")
+    return ci.check_imports(
+        project_id=ctx.project_id,
+        projects_root=ctx.projects_root,
+        subdir=str(inp.get("subdir") or ""),
+    )
+
+
+def _h_handoff(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    # The runner (runtime/runner._invoke_agent) intercepts `handoff` tool calls
+    # to validate `target` against the agent's allowed handoff targets and
+    # synthesize the canonical `HANDOFF:` directive that the rest of the pipeline
+    # parses. This echo handler only runs if the tool is ever dispatched outside
+    # that path; it just records the requested routing so the transcript is sane.
+    return {
+        "target": str(inp.get("target", "")).strip(),
+        "summary": str(inp.get("summary", "") or ""),
+        "acknowledged": True,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Register defaults. Idempotent guard for repeated imports under pytest etc.
 # ---------------------------------------------------------------------------
@@ -473,16 +519,23 @@ def _register_defaults() -> None:
     register(ToolSpec(
         name="execute",
         description=(
-            "Run a shell command in the project sandbox. Resource-limited "
-            "(CPU, memory) and timeout-bounded. stdout/stderr are truncated "
-            "past 8k chars for the response."
+            "Run a program in the project sandbox. NOT a shell: pass an argv "
+            "list whose first element is one of python / python3 / pytest "
+            "(other executables and shell strings are refused). Outbound network "
+            "is blocked. Resource-limited (CPU, memory) and timeout-bounded. "
+            "stdout/stderr are truncated past 8k chars for the response. To run "
+            "anything else, write a Python script and execute that."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "cmd": {
                     "type": "array", "items": {"type": "string"},
-                    "description": "Argv list. Example: ['python', 'train.py', '--seed', '0']",
+                    "description": (
+                        "Argv list (NOT a shell string); cmd[0] must be "
+                        "python/python3/pytest. Example: "
+                        "['python', 'train.py', '--seed', '0']"
+                    ),
                 },
                 "timeout_seconds": {"type": "integer", "default": 1800},
                 "cpu_seconds": {"type": "integer"},
@@ -659,6 +712,60 @@ def _register_defaults() -> None:
             "required": ["path", "content"],
         },
         handler=_h_write_release_file,
+    ))
+
+    register(ToolSpec(
+        name="check_imports",
+        description=(
+            "Statically check that every intra-project import in the sandbox "
+            "resolves — WITHOUT running any code. Parses all .py files and reports "
+            "imports of names no sibling module defines (the #1 cause of rejected "
+            "reviews, e.g. `from src.config import TERRAINS` where config.py never "
+            "defines TERRAINS). Returns `ok`, `files_checked`, and an `unresolved` "
+            "list where each entry names the missing symbol AND what IS available "
+            "in that module, so you can fix the import or add the real definition. "
+            "Call this before handing off and resolve every entry. Read-only; "
+            "nothing is imported or executed, so it cannot run your experiment."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "subdir": {
+                    "type": "string",
+                    "description": "Optional sandbox-relative subdir to scope the check (default: whole sandbox).",
+                    "default": "",
+                },
+            },
+        },
+        handler=_h_check_imports,
+    ))
+
+    register(ToolSpec(
+        name="handoff",
+        description=(
+            "Finish your turn and route to the next agent. Call this INSTEAD of "
+            "writing a 'HANDOFF:' line in prose — it is the reliable way to hand "
+            "off and the only one guaranteed to be parsed. `target` must be one of "
+            "your allowed handoff targets (or 'DONE' to end the run); an unknown "
+            "target is rejected and you may simply call handoff again. Put the "
+            "metadata the next agent needs (e.g. files_written, run_cmd, plan_step) "
+            "in `summary`."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Next agent to run, e.g. 'test_gen' or 'code_review', or 'DONE'.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Handoff payload / note for the next agent (JSON object or prose).",
+                },
+            },
+            "required": ["target"],
+        },
+        handler=_h_handoff,
     ))
 
 

@@ -127,6 +127,7 @@ per terrain and report mean +/- SD of feasibility, path length, and
 optimality gap per condition. (`n_seeds`/`seeds` carries the initial-point
 count.)
 """
+params = { min_seeds = 5 }
 
 [[checks]]
 id = "counterintuitive_signs_flagged"

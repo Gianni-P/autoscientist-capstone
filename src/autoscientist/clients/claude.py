@@ -130,7 +130,11 @@ def complete(
         # router also drops temperature proactively via supports_temperature;
         # this catches models not yet flagged.
         msg = str(e).lower()
-        if "temperature" in msg and "temperature" in kwargs:
+        _param_rejected = any(
+            w in msg for w in
+            ("deprecat", "unsupported", "not support", "not allowed", "invalid", "does not support")
+        )
+        if "temperature" in kwargs and "temperature" in msg and _param_rejected:
             log.warning("claude.temperature_unsupported_retry", model=model)
             kwargs.pop("temperature", None)
             response = client.messages.create(**kwargs)

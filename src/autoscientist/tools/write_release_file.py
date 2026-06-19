@@ -43,7 +43,9 @@ def write_release_file(
     if rel.is_absolute():
         raise ReleaseEscape(f"path must be relative, got: {path}")
     dest = (release / rel).resolve()
-    if not str(dest).startswith(str(release.resolve())):
+    # Real path-boundary containment (not a string prefix, which would accept a
+    # prefix-colliding sibling like ``../release_x/f``).
+    if not dest.is_relative_to(release.resolve()):
         raise ReleaseEscape(f"path escapes release dir: {path}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)

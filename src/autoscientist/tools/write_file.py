@@ -44,8 +44,14 @@ def write_file(
     rel = PurePosixPath(path)
     if rel.is_absolute():
         raise SandboxEscape(f"path must be relative, got: {path}")
+    sandbox_root = sandbox.resolve()
     dest = (sandbox / rel).resolve()
-    if not str(dest).startswith(str(sandbox.resolve())):
+    # Real path-boundary containment. A string-prefix check (startswith) would
+    # also accept a SIBLING whose name extends the sandbox prefix — e.g.
+    # ``../sandbox_evil/x`` resolves to ``…/sandbox_evil/x`` which *string*-starts
+    # with ``…/sandbox`` yet is outside the sandbox dir. is_relative_to enforces
+    # a true ancestor relationship on path components.
+    if not dest.is_relative_to(sandbox_root):
         raise SandboxEscape(f"path escapes sandbox: {path}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)

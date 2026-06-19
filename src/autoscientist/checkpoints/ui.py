@@ -616,7 +616,7 @@ def _render_stage3_preliminary(parsed: dict[str, Any] | None, raw: str) -> None:
         return
 
     # Detect code_review shape (findings + verdict) vs validator shape (checks).
-    is_code_review = "findings" in parsed or "verdict" in parsed and "checks" not in parsed
+    is_code_review = ("findings" in parsed or "verdict" in parsed) and "checks" not in parsed
     is_validator = "checks" in parsed or "counterintuitive_findings" in parsed
 
     if is_code_review and not is_validator:

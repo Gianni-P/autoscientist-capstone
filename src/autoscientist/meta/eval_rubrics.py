@@ -46,6 +46,7 @@ class RubricScore:
     judge_model: str
     parse_errors: tuple[str, ...] = field(default_factory=tuple)
     raw_judge_text: str = ""
+    judge_cost_usd: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +57,7 @@ class RubricScore:
             "summary": self.summary,
             "total": self.total,
             "judge_model": self.judge_model,
+            "judge_cost_usd": self.judge_cost_usd,
             "parse_errors": list(self.parse_errors),
         }
 
@@ -174,6 +176,8 @@ def score_output(
     candidate_output: str,
     cfg: Config | None = None,
     extra_envelope: dict[str, Any] | None = None,
+    project_id: str | None = None,
+    run_id: str | None = None,
 ) -> RubricScore:
     """Run the judge on a single (candidate, anchor) pair.
 
@@ -206,6 +210,8 @@ def score_output(
         system=system,
         messages=messages,
         cfg=cfg,
+        project_id=project_id,
+        run_id=run_id,
     )
     scores, rationales, summary, parse_errors = _parse_judge_response(
         result.content, rubric,
@@ -221,6 +227,7 @@ def score_output(
         judge_model=result.model,
         parse_errors=tuple(parse_errors),
         raw_judge_text=result.content,
+        judge_cost_usd=result.cost_usd or 0.0,
     )
     log.info(
         "meta.eval.scored",

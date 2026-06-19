@@ -16,7 +16,7 @@ checklist.
 Before launching anything that costs money:
 
 ```bash
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 uv sync
 uv run python scripts/dry_run_phase8.py            # ~$0.0001
 uv run python scripts/dry_run_phase8.py --ollama   # validates Qwen too
@@ -110,7 +110,7 @@ terminal `HANDOFF: DONE`, emitted by `repo_publisher` after it writes
 the curated release tree to `projects/<id>/release/`.
 
 ```bash
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 PAYLOAD=$(cat projects/pneumonia-data-efficiency/kickoff_payload.json)
 uv run python -m autoscientist.runtime.runner \
     --agent lit_review \
@@ -126,7 +126,7 @@ log line like `checkpoint.opened cp_id=cp_... stage=N`.
 modify / ask-questions pages:
 
 ```bash
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 uv run streamlit run src/autoscientist/checkpoints/ui.py
 ```
 
@@ -167,7 +167,7 @@ uv run python -m autoscientist.runtime.runner --resume <run_id>
 This picks up from the most recently resolved checkpoint.
 
 **Abort.** Reject the pending checkpoint in the Streamlit UI. The
-runner will mark the run `failed` and exit. To resume from earlier
+runner will mark the run `cancelled` and exit. To resume from earlier
 state, pick a prior approved checkpoint as the resume point (currently
 requires manual SQLite edit -- see `state/db.py` schema).
 

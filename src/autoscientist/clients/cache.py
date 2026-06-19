@@ -93,18 +93,21 @@ def put_cached(
     prompt_tokens: int | None,
     completion_tokens: int | None,
 ) -> None:
+    # On REPLACE of an existing key, preserve the original created_at and
+    # last_hit_at (and hit_count) rather than resetting cache age/recency.
     conn.execute(
         """INSERT OR REPLACE INTO cache (
             cache_key, provider, model, request_blob, response_blob,
             prompt_tokens, completion_tokens, created_at, hit_count, last_hit_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
+            COALESCE((SELECT created_at FROM cache WHERE cache_key = ?), ?),
             COALESCE((SELECT hit_count FROM cache WHERE cache_key = ?), 0),
-            NULL
+            (SELECT last_hit_at FROM cache WHERE cache_key = ?)
         )""",
         (
             key, provider, model,
             _canonicalize(request_blob), _canonicalize(response_blob),
-            prompt_tokens, completion_tokens, now_iso(), key,
+            prompt_tokens, completion_tokens, key, now_iso(), key, key,
         ),
     )

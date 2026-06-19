@@ -82,6 +82,7 @@ metrics. Tabular models are cheap, so this project mandates >= 5 seeds with
 mean and SD reported per condition. Fails when n_seeds < 5 or per-condition
 variance is not reported.
 """
+params = { min_seeds = 5 }
 
 [[checks]]
 id = "baseline_reproduced_within_tolerance"

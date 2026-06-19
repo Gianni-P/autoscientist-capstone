@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +50,10 @@ class PitfallCheck:
     title: str
     severity: Severity
     description: str
+    # Optional per-check tuning knobs from the domain TOML's ``[checks.params]``
+    # sub-table (e.g. ``min_seeds``). Lets a domain raise a deterministic
+    # threshold without forking the handler. Defaults to empty (handler default).
+    params: Mapping[str, Any] = field(default_factory=dict)
 
 
 CheckHandler = Callable[[Mapping[str, Any], PitfallCheck], Verdict]
@@ -97,11 +101,15 @@ def load_pitfall_config(path: Path) -> list[PitfallCheck]:
         sev = raw.get("severity", "fail")
         if sev not in ("fail", "needs_human", "warn"):
             raise ValueError(f"invalid severity '{sev}' for pitfall '{cid}'")
+        params = raw.get("params", {})
+        if not isinstance(params, dict):
+            raise ValueError(f"pitfall '{cid}' params must be a table, got {type(params).__name__}")
         out.append(PitfallCheck(
             id=cid,
             title=raw.get("title", cid),
             severity=sev,
             description=str(raw.get("description", "")).strip(),
+            params=params,
         ))
     return out
 
@@ -370,7 +378,8 @@ def _check_multi_seed_reporting(
             category="pitfall",
         )
     n = len(seeds) if isinstance(seeds, (list, tuple, set)) else None
-    if n is None and isinstance(n_declared, int):
+    # bool is a subtype of int — guard so n_seeds=True/False isn't read as 1/0.
+    if n is None and isinstance(n_declared, int) and not isinstance(n_declared, bool):
         n = n_declared
     if n is None:
         return _v(check, "fail",
@@ -384,10 +393,21 @@ def _check_multi_seed_reporting(
             state.get("per_condition_variance")
             or state.get("results_with_sd")
         )
-    if n < 3:
+    # Minimum seed count is domain-configurable: clinical_tabular and
+    # numerical_optimization mandate >= 5, medical_imaging >= 3 (KICKOFF). The
+    # threshold comes from the check's params (default 3) so the deterministic
+    # gate matches the domain checklist instead of a single hard-coded literal.
+    try:
+        min_seeds = int(check.params.get("min_seeds", 3))
+    except (TypeError, ValueError):
+        min_seeds = 3
+    if min_seeds < 1:
+        min_seeds = 3
+    if n < min_seeds:
         return _v(check, "fail",
-                  f"only {n} seed(s) used; KICKOFF requires >= 3",
-                  {"n_seeds": n, "report_seed_variance": bool(variance_flag)})
+                  f"only {n} seed(s) used; this domain requires >= {min_seeds}",
+                  {"n_seeds": n, "min_seeds": min_seeds,
+                   "report_seed_variance": bool(variance_flag)})
     if not variance_flag:
         return _v(check, "fail",
                   f"{n} seeds run but per-condition variance not reported",
@@ -636,17 +656,22 @@ def _check_target_leakage_features_excluded(
         return _v(check, "fail",
                   f"{len(leaking_list)} potential target-leaking feature(s) not removed",
                   {"leaking_features": leaking_list, "leaking_features_removed": bool(removed)})
-    if bool(reviewed) or bool(removed) or not leaking_list:
+    if bool(reviewed) or bool(removed):
         return _v(check, "pass",
                   "feature provenance reviewed; no unremoved leaking features",
                   {"target_leakage_reviewed": bool(reviewed),
                    "leaking_features": leaking_list,
                    "leaking_features_removed": bool(removed)})
-    return make_skipped(
-        check.id, check.title, severity=check.severity,
-        reason="insufficient signal to judge target leakage",
-        category="pitfall",
-    )
+    # No leaking features AND review not addressed either way → nothing to flag.
+    if not leaking_list and reviewed is None:
+        return _v(check, "pass",
+                  "no leaking features declared",
+                  {"target_leakage_reviewed": None, "leaking_features": []})
+    # Reviewed was explicitly declared falsy (provenance NOT reviewed) with no
+    # removals — an empty leaking_features list is not evidence of absence.
+    return _v(check, "needs_human",
+              "feature provenance not reviewed; cannot confirm absence of target leakage",
+              {"target_leakage_reviewed": bool(reviewed), "leaking_features": leaking_list})
 
 
 def _check_calibration_reported(
@@ -673,7 +698,11 @@ def _check_calibration_reported(
         "calibration_slope", "calibration_intercept", "calibration",
     }
     found = sorted(names & calib_terms)
-    if found or bool(ece) or bool(brier):
+    # `is not None and is not False` so a numeric ECE/Brier of 0.0 (a perfectly
+    # calibrated model) still counts as "reported" rather than failing on bool(0.0).
+    ece_reported = ece is not None and ece is not False
+    brier_reported = brier is not None and brier is not False
+    if found or ece_reported or brier_reported:
         return _v(check, "pass",
                   "calibration metric(s) reported alongside discrimination",
                   {"calibration_terms_found": found,
@@ -767,6 +796,15 @@ def _check_constraint_feasibility(
         return _v(check, "fail",
                   f"path violates the descent-grade constraint at {n_viol} step(s)",
                   {"constraint_violations": n_viol})
+    # An explicit constraint_satisfied=False is authoritative: the producer is
+    # asserting the path is infeasible. Without this, a contradictory
+    # constraint_violations=0 alongside satisfied=False would reach the pass
+    # branch via `n_viol == 0` and green-light an infeasible path.
+    if satisfied is not None and not bool(satisfied):
+        return _v(check, "fail",
+                  "run explicitly reports the descent-grade constraint is not satisfied",
+                  {"constraint_satisfied": False,
+                   "constraint_violations": n_viol if n_viol is not None else violations})
     if bool(satisfied) or n_viol == 0:
         return _v(check, "pass",
                   "constraint satisfied at every step of the produced path",
@@ -803,13 +841,20 @@ def _check_descent_terminates(
         return _v(check, "fail",
                   "scheme hit the iteration cap without converging to the target",
                   {"hit_iteration_cap": True, "converged": bool(converged)})
-    if converged is not None and not bool(converged):
+    if converged is None:
+        # Loop is bounded, but convergence was never reported — we must not
+        # claim "converged to the target". Escalate rather than pass.
+        return _v(check, "needs_human",
+                  "rotation loop is bounded but convergence was not reported; "
+                  "confirm the target was reached",
+                  {"rotation_turn_cap": turn_cap, "converged": None})
+    if not bool(converged):
         return _v(check, "needs_human",
                   "run did not report convergence; confirm the target was reached",
                   {"converged": False, "rotation_turn_cap": turn_cap})
     return _v(check, "pass",
               "rotation loop bounded and scheme converged to the target",
-              {"rotation_turn_cap": turn_cap, "converged": bool(converged)})
+              {"rotation_turn_cap": turn_cap, "converged": True})
 
 
 def _check_well_defined_target(
@@ -831,7 +876,9 @@ def _check_well_defined_target(
             reason="objective_has_defined_target / convergence_target / endpoints_comparable not declared",
             category="pitfall",
         )
-    well_defined = bool(has_target) or bool(target)
+    # A declared target is "present" when it is not None — a falsy-but-valid
+    # target (elevation 0 / sea level, index 0) must not read as "no target".
+    well_defined = bool(has_target) or target is not None
     # Only an issue when path lengths are actually compared across strategies.
     if compares_paths is not None and not bool(compares_paths):
         return _v(check, "pass",

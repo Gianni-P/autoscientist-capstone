@@ -24,8 +24,8 @@ If you ever feel pressure to claim more capability than this, push back in your 
 
 ## 2. Operator environment
 
-- **Host:** Windows with WSL2 / Ubuntu on the D: drive
-- **Working directory:** `/mnt/d/autoscientist` (create it if absent — `mkdir -p /mnt/d/autoscientist && cd /mnt/d/autoscientist`)
+- **Host:** Windows with WSL2 / Ubuntu; project on the WSL ext4 filesystem
+- **Working directory:** `~/autoscientist` (i.e. `/home/gdp/autoscientist` on ext4 — migrated off the old `/mnt/d/autoscientist` Windows-drive path, which must not be recreated)
 - **GPU:** NVIDIA RTX 5090, 32 GB VRAM (verify with `nvidia-smi`)
 - **Local LLM serving:** Ollama, accessible at `http://localhost:11434`
   - Operator referenced "Qwen3.6 27B" — this name is not a known official Qwen release. Run `ollama list` and use whatever 27B-class Qwen model is actually installed. Document the actual name in the config.
@@ -77,7 +77,7 @@ These are the principles that make this system work versus making yet another "A
 Create exactly this layout in Phase 1:
 
 ```
-/mnt/d/autoscientist/
+~/autoscientist/
 ├── pyproject.toml              # uv-managed
 ├── uv.lock
 ├── .env.example                # documents required env vars
@@ -353,7 +353,7 @@ Likely decisions you'll hit:
 
 By end of week 1, the operator should be able to:
 
-1. `cd /mnt/d/autoscientist && uv sync && uv run streamlit run src/autoscientist/checkpoints/ui.py` — launches a stub UI
+1. `cd ~/autoscientist && uv sync && uv run streamlit run src/autoscientist/checkpoints/ui.py` — launches a stub UI
 2. `uv run python scripts/smoke_phase1.py` — passes, exercising stub agents through handoffs with caching and budget tracking
 3. See structured JSONL logs in `runs/<run_id>/logs/` after the smoke test
 4. Verify cache hits on the second run of the smoke test (zero spend)

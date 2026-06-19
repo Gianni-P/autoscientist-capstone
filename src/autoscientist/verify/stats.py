@@ -421,6 +421,13 @@ def check_discrimination_floor(
             worse.append(row)
         elif lo is not None and hi is not None and lo <= chance_level <= hi:
             near.append(row)
+        elif point is not None and hi is None and point < chance_level - near_margin:
+            # Point estimate materially below chance with no upper CI bound to
+            # rescue it. Without this branch a worse-than-chance point-only AUROC
+            # (e.g. 0.30, no CI) matches none of the above and falls through to
+            # 'pass' — exactly the NIH->PadChest failure class this guard exists
+            # to catch. A point above chance with no CI is still a clean pass.
+            worse.append(row)
         elif point is not None and abs(point - chance_level) <= near_margin:
             near.append(row)
     if not inspected:

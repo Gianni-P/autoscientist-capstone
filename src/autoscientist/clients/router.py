@@ -217,9 +217,16 @@ def route(
         project_cfg_path = cfg.root / "projects" / project_id / "config.toml"
         if project_cfg_path.exists():
             import tomllib
-            with project_cfg_path.open("rb") as f:
-                pcfg = tomllib.load(f)
-            soft_cap = float(pcfg.get("budget", {}).get("project_soft_cap_usd", 0))
+            try:
+                with project_cfg_path.open("rb") as f:
+                    pcfg = tomllib.load(f)
+                soft_cap = float(pcfg.get("budget", {}).get("project_soft_cap_usd", 0))
+            except (tomllib.TOMLDecodeError, ValueError, TypeError) as e:
+                # A malformed project config.toml must not abort the whole run;
+                # fall back to no soft cap (the monthly hard cap still applies).
+                log.warning("router.project_config_unreadable",
+                            project_id=project_id, error=str(e))
+                soft_cap = 0.0
             if soft_cap > 0:
                 assert_project_budget(conn, project_id, soft_cap, estimated_cost)
 

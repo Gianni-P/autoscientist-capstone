@@ -204,15 +204,40 @@ def new_id(prefix: str = "") -> str:
     return f"{prefix}{raw}" if prefix else raw
 
 
+# Columns added to a table AFTER its initial CREATE. ``CREATE TABLE IF NOT
+# EXISTS`` cannot add a column to a table that already exists, so an older DB
+# would be left missing these. Reconcile them explicitly via ALTER TABLE ADD
+# COLUMN (idempotent — guarded by a PRAGMA table_info check). Each column_def
+# must be ALTER-compatible (nullable, or NOT NULL with a DEFAULT) and match the
+# definition in _SCHEMA above. Append here whenever a column is added to an
+# existing table and bump SCHEMA_VERSION.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("run_controls", "handoffs_so_far", "handoffs_so_far INTEGER"),
+    ("run_controls", "code_review_cycles", "code_review_cycles INTEGER"),
+    ("checkpoint_questions", "agent_used", "agent_used TEXT"),
+    ("checkpoint_questions", "cost_usd", "cost_usd REAL"),
+)
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Add any missing late-introduced columns to pre-existing tables."""
+    for table, column, column_def in _ADDED_COLUMNS:
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            continue  # table absent entirely; _SCHEMA created it fresh with all cols
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
+    # executescript creates any missing TABLES; reconcile missing COLUMNS on
+    # tables that predate a column addition (CREATE TABLE IF NOT EXISTS can't).
+    _ensure_columns(conn)
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row is None:
         conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
     elif row["version"] < SCHEMA_VERSION:
-        # All schema additions to date are pure CREATE TABLE IF NOT EXISTS, so
-        # the executescript above already added any missing tables for older
-        # DBs. Just bump the recorded version.
         conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
     conn.commit()
 

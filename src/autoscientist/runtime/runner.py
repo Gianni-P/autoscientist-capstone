@@ -34,6 +34,7 @@ import logging as stdlib_logging
 import os
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import structlog
@@ -45,8 +46,10 @@ from autoscientist.runtime import control as run_control
 from autoscientist.runtime.agent import Agent, load_prompt
 from autoscientist.runtime.config import Config, load_config
 from autoscientist.runtime.handoff import DONE, Handoff, parse_handoff
+from autoscientist.runtime.project_context import inject_project_context
 from autoscientist.runtime.payload_files import (
     build_code_review_payload_from_sandbox,
+    build_paper_writer_payload_from_sandbox,
     persist_files_from_payload,
 )
 from autoscientist.state.db import (
@@ -59,6 +62,48 @@ from autoscientist.tools import registry as tool_registry
 
 DEFAULT_MAX_TOOL_ROUNDS = 40
 DEFAULT_MAX_CODE_REVIEW_CYCLES = 3
+
+# Verdict-emission safety net for the tool-use loop. A thorough agent
+# (observed: code_review on Sonnet) can spend its entire tool-round budget
+# investigating and never emit a tool-free final message — so the loop exits
+# at the cap with a tool-call result whose content is empty, which then gets
+# force-forwarded as an empty payload and opens a degenerate checkpoint
+# (run_fbd5651…, 2026-06-18). Two-part fix:
+#  (1) _FINALIZE_NUDGE_ROUNDS rounds before the cap, tell the agent to stop
+#      calling tools and emit its verdict now;
+#  (2) if it still ends on tool calls at the cap, force ONE final completion
+#      with tools disabled so a real text verdict is always produced.
+_FINALIZE_NUDGE_ROUNDS = 3
+_FINALIZE_NUDGE = (
+    "SYSTEM: You have {remaining} tool-use round(s) left before this turn is "
+    "force-closed. Stop calling tools now and write your FINAL response — your "
+    "complete verdict/output as text — ending with a `HANDOFF: <target>` line "
+    "(or call the handoff tool). If you keep calling tools you will be cut off "
+    "with no output recorded."
+)
+_FINALIZE_FORCED = (
+    "SYSTEM: Tool-use budget exhausted — you may NOT call any more tools. Write "
+    "your final response now as plain text: your complete verdict/output, "
+    "ending with a `HANDOFF: <target>` line so the pipeline can advance."
+)
+
+
+def _append_user_text(messages: list[dict], provider: str, text: str) -> None:
+    """Append an instruction as a user-visible message, provider-shaped.
+
+    Anthropic/mock: fold a text block into the trailing tool_result user
+    message when present (two bare user turns in a row is awkward), else add a
+    new user message. Ollama/OpenAI: a standalone user message after the tool
+    results.
+    """
+    if provider in ("claude", "mock"):
+        tail = messages[-1] if messages else None
+        if tail and tail.get("role") == "user" and isinstance(tail.get("content"), list):
+            tail["content"].append({"type": "text", "text": text})
+        else:
+            messages.append({"role": "user", "content": [{"type": "text", "text": text}]})
+    else:
+        messages.append({"role": "user", "content": text})
 
 # Forward-flow topology for the missing-HANDOFF backstop. When a non-terminal
 # agent finishes its turn but the model omits the `HANDOFF: <target>` directive
@@ -78,6 +123,89 @@ _FORWARD_TARGET: dict[str, str] = {
     "results_validator": "paper_writer",
     "paper_writer": "peer_reviewer",
 }
+
+# Below this length, a code_review payload with no file/review structure is
+# treated as "thin" (nothing substantive to review) and rebuilt from the
+# sandbox. A real structured handoff summary easily clears this; a stray
+# conversational fragment does not.
+_THIN_REVIEW_PAYLOAD_CHARS = 400
+
+# Structural markers that prove a code_review payload carries real review
+# material (file lists, run commands, or a source path) — presence of any one
+# means the payload is NOT thin regardless of length.
+_REVIEW_PAYLOAD_MARKERS = ("src_files", "files_written", '"files"', "run_cmd", ".py")
+
+
+def _is_thin_code_review_payload(payload: str) -> bool:
+    """True when an inbound code_review payload has nothing real to review.
+
+    code_review has no file-reading tool, so its whole input is the handoff
+    payload. The original backstop rebuilt from the sandbox only when that
+    payload was empty/whitespace — but a forced handoff can also forward a
+    short conversational fragment when an upstream agent runs out of tool
+    rounds mid-sentence (observed: test_gen exhausted its rounds and forwarded
+    ``"I need to import the configuration constants. Let me fix this:"``).
+    Such a payload carries no files and no review structure, so code_review
+    hallucinates a "your message got cut off" reply and CP3 opens with that
+    garbage instead of a real verdict. Treat a payload that lacks every
+    structural marker AND is short as thin so we rebuild from the sandbox.
+    """
+    if not payload or not payload.strip():
+        return True
+    lowered = payload.strip().lower()
+    if any(marker in lowered for marker in _REVIEW_PAYLOAD_MARKERS):
+        return False
+    return len(payload.strip()) < _THIN_REVIEW_PAYLOAD_CHARS
+
+
+# Substrings that prove a paper_writer payload is a placeholder/empty shell
+# rather than a real plan + materialised results. ``<the methodology plan>`` is
+# the literal placeholder results_validator copies from its own prompt; the
+# others are the unfilled markers that signal "no numbers were ever provided".
+_PAPER_PLACEHOLDER_MARKERS = (
+    "<the methodology plan>",
+    "[result from run]",
+    "result from run",
+)
+
+
+def _is_thin_paper_writer_payload(payload: str) -> bool:
+    """True when an inbound paper_writer payload has no real plan/results.
+
+    paper_writer drafts the results section from ``results`` and grounds the
+    paper in ``plan``. results_validator (an LLM) frequently forwards a
+    placeholder plan + empty ``results`` (observed 2026-06-18, run_e93293803c98:
+    ``"plan": "<the methodology plan>"`` and ``"results": {"metrics": []}``),
+    leaving paper_writer nothing to write — it then emits a shell of
+    ``[RESULT FROM run]`` / ``[CITATION NEEDED]`` markers that peer_reviewer
+    rejects outright. Treat such a payload as thin so the runner rebuilds it
+    from the run's plan + the materialised result JSON in the sandbox.
+
+    Thin when: empty/whitespace; OR it carries a placeholder marker; OR it
+    parses to JSON whose ``results`` has no usable numeric content (no
+    ``terrain_summaries``/``metrics`` rows and no ``mean``-style key).
+    """
+    if not payload or not payload.strip():
+        return True
+    lowered = payload.lower()
+    if any(marker in lowered for marker in _PAPER_PLACEHOLDER_MARKERS):
+        return True
+    parsed = _maybe_parse_json(payload)
+    if not isinstance(parsed, dict):
+        return False  # unparseable but substantial — leave it for the agent
+    results = parsed.get("results")
+    if results in (None, {}, [], ""):
+        return True
+    if isinstance(results, dict):
+        rows = results.get("terrain_summaries") or results.get("metrics")
+        has_rows = isinstance(rows, list) and len(rows) > 0
+        # A non-empty results dict with neither rows nor any numeric leaf is a shell.
+        has_numbers = any(
+            isinstance(v, (int, float)) for v in results.values()
+        ) or "mean" in str(results).lower()
+        if not has_rows and not has_numbers:
+            return True
+    return False
 
 # Cumulative USD ceiling for a SINGLE agent invocation's tool-loop. The
 # per-call cost_ceiling_usd (router) bounds one call; this bounds the SUM
@@ -208,10 +336,21 @@ def _provider_for_agent(cfg: Config, agent_name: str) -> str:
 
 
 def _agent_max_tool_rounds(cfg: Config, agent_name: str, default: int) -> int:
-    """Return per-agent max_tool_rounds from models.toml, or ``default``."""
+    """Return per-agent max_tool_rounds from models.toml, or ``default``.
+
+    A non-numeric value in models.toml falls back to ``default`` (with a
+    warning) rather than crashing the whole run mid-flight.
+    """
     agents = cfg.models.get("agents", {})
     agent_cfg = agents.get(agent_name, {})
-    return int(agent_cfg.get("max_tool_rounds", default))
+    raw = agent_cfg.get("max_tool_rounds", default)
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        log = structlog.get_logger("autoscientist.runner")
+        log.warning("run.bad_max_tool_rounds", agent=agent_name, value=raw, using=default)
+        return default
+    return n if n > 0 else default
 
 
 def _agent_invocation_ceiling(cfg: Config, agent_name: str) -> float:
@@ -234,11 +373,17 @@ def _agent_invocation_ceiling(cfg: Config, agent_name: str) -> float:
             pass  # fall through to config on a malformed override
     agents = cfg.models.get("agents", {})
     agent_cfg = agents.get(agent_name, {})
-    if "invocation_ceiling_usd" in agent_cfg:
-        return float(agent_cfg["invocation_ceiling_usd"])
     budget = cfg.models.get("budget", {})
-    if "default_invocation_ceiling_usd" in budget:
-        return float(budget["default_invocation_ceiling_usd"])
+    for source in (agent_cfg.get("invocation_ceiling_usd"),
+                   budget.get("default_invocation_ceiling_usd")):
+        if source is None:
+            continue
+        try:
+            return float(source)
+        except (TypeError, ValueError):
+            log = structlog.get_logger("autoscientist.runner")
+            log.warning("run.bad_invocation_ceiling", agent=agent_name, value=source)
+            break  # malformed override -> fall through to the safe default
     return DEFAULT_INVOCATION_CEILING_USD
 
 
@@ -391,6 +536,29 @@ def _invoke_agent(
                     duration_ms=0,
                 )
                 log.warning("run.tool_call_disallowed", agent=agent.name, tool=tc.name)
+            elif tc.name == "handoff":
+                # Validate the target here so the recorded tool_result reflects
+                # acceptance/rejection. The synthesize-and-return (for a valid
+                # target) happens after this loop; an invalid target stays an
+                # error so the model sees it and can retry within the loop.
+                _target = str(tc.input.get("target", "")).strip()
+                _allowed_targets = set(agent.handoff_targets) | {DONE}
+                if _target in _allowed_targets:
+                    dr = tool_registry.DispatchResult(
+                        name=tc.name, input=tc.input,
+                        output={"target": _target,
+                                "summary": str(tc.input.get("summary", "") or ""),
+                                "accepted": True},
+                        error=None, duration_ms=0,
+                    )
+                else:
+                    dr = tool_registry.DispatchResult(
+                        name=tc.name, input=tc.input, output=None,
+                        error=(f"invalid handoff target {_target!r}; must be one of "
+                               f"{sorted(_allowed_targets)}. Call handoff again with a valid target."),
+                        duration_ms=0,
+                    )
+                    log.warning("run.handoff_tool_invalid_target", agent=agent.name, target=_target)
             else:
                 dr = tool_registry.dispatch(tc.name, tc.input, ctx)
             dispatch_results.append(dr)
@@ -408,6 +576,26 @@ def _invoke_agent(
                 latency_ms=dr.duration_ms,
             )
             conn.commit()
+
+        # Structured handoff: a valid `handoff` tool call ends the turn. Rewrite
+        # it into the canonical `HANDOFF: <target>` directive in the content so
+        # parse_handoff / payload persistence / checkpoints in _drive_loop are
+        # unchanged — this is the parse-proof alternative to the bare-line text
+        # directive qwen3-coder routinely failed to emit. An invalid target was
+        # turned into a tool error above, so the loop falls through here and the
+        # model gets another round to retry.
+        _handoff_tc = next((tc for tc in result.tool_calls if tc.name == "handoff"), None)
+        if _handoff_tc is not None:
+            _target = str(_handoff_tc.input.get("target", "")).strip()
+            if _target in (set(agent.handoff_targets) | {DONE}):
+                _summary = str(_handoff_tc.input.get("summary", "") or "").strip()
+                _prefix = (result.content.rstrip() + "\n\n") if result.content.strip() else ""
+                result.content = f"{_prefix}HANDOFF: {_target}" + (f"\n{_summary}" if _summary else "")
+                log.info(
+                    "run.handoff_tool_used",
+                    agent=agent.name, target=_target, round=round_idx,
+                )
+                return result
 
         # Build next-round messages. Provider-specific shape.
         if provider in ("claude", "mock"):
@@ -459,9 +647,53 @@ def _invoke_agent(
             log.error("run.tool_round_unsupported_provider", provider=provider)
             return result
 
+        # (1a) Nearing the round cap: nudge the agent to stop investigating and
+        # emit its verdict, so it returns a real tool-free message before we run
+        # out of rounds. Fires once (only one round_idx makes remaining match).
+        remaining = max_tool_rounds - round_idx
+        if remaining == _FINALIZE_NUDGE_ROUNDS:
+            _append_user_text(messages, provider, _FINALIZE_NUDGE.format(remaining=remaining))
+            log.info("run.finalize_nudge_injected", agent=agent.name, remaining=remaining)
+
     log.warning(
         "run.tool_loop_max_rounds_reached", agent=agent.name, rounds=max_tool_rounds,
     )
+    # (1b) The agent burned every round on tool calls and never emitted a
+    # tool-free verdict, so last_result.content is empty/partial. Force ONE
+    # final completion with tools disabled — guarantees a real text verdict
+    # instead of force-forwarding an empty payload (degenerate checkpoint).
+    if last_result is not None and last_result.tool_calls:
+        _append_user_text(messages, provider, _FINALIZE_FORCED)
+        forced = route(
+            conn=conn,
+            agent_name=agent.name,
+            system=prompt.system_text,
+            messages=messages,
+            run_id=run_id,
+            max_tokens=prompt.max_tokens,
+            temperature=prompt.temperature,
+            tools_anthropic=None,
+            tools_openai=None,
+            tools_signature=None,
+            cfg=cfg,
+            project_id=project_id,
+        )
+        record_message(
+            conn, run_id=run_id, agent_name=agent.name,
+            role="assistant",
+            content=forced.content,
+            reasoning=forced.reasoning,
+            model=forced.model,
+            prompt_tokens=forced.prompt_tokens,
+            completion_tokens=forced.completion_tokens,
+        )
+        conn.commit()
+        log.warning(
+            "run.verdict_forced_after_max_rounds",
+            agent=agent.name,
+            content_chars=len(forced.content),
+        )
+        return forced
     return last_result
 
 
@@ -475,23 +707,65 @@ def _maybe_parse_json(text: str) -> dict | None:
     """
     if not text:
         return None
-    start = text.find("{")
-    if start < 0:
-        return None
-    depth = 0
-    for i in range(start, len(text)):
-        ch = text[i]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                blob = text[start:i + 1]
-                try:
-                    return json.loads(blob)
-                except json.JSONDecodeError:
-                    return None
+    # Use a real JSON parser (raw_decode) at each '{' rather than counting
+    # braces: a naive depth counter miscounts '}' inside string values (common
+    # when the assistant text embeds code), truncating the blob so it fails to
+    # parse and the checkpoint preview / thin-payload detection silently no-op.
+    decoder = json.JSONDecoder()
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, _end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            idx = text.find("{", idx + 1)
+            continue
+        if isinstance(obj, dict):
+            return obj
+        idx = text.find("{", idx + 1)
     return None
+
+
+def _fetch_plan_and_validator(conn, run_id: str) -> tuple[str | None, object]:
+    """Return ``(plan_text, validator_summary)`` for a run from the DB.
+
+    Authoritative sources for paper_writer payload reconstruction:
+
+    * **plan** — the ``code_gen`` agent's first inbound (``role='user'``)
+      message, which carries the full CP2-approved methodology plan verbatim
+      (results_validator's forwarded ``plan`` is an unreliable placeholder).
+    * **validator_summary** — results_validator's *most recent* non-empty
+      assistant message, parsed to a dict when possible. Recency (not length)
+      is what matters: results_validator can fire several times across CP3/CP4
+      revise cycles, and the operative verdict is the last one — the one that
+      drove the forward handoff to paper_writer (an earlier, longer ``revise``
+      message is stale).
+
+    Best-effort: any missing piece returns ``None`` for that slot. Never raises.
+    """
+    plan_text: str | None = None
+    validator_summary: object = None
+    try:
+        row = conn.execute(
+            "SELECT content FROM messages WHERE run_id=? AND agent_name='code_gen' "
+            "AND role='user' ORDER BY created_at ASC, rowid ASC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if row is not None:
+            plan_text = row[0]
+    except Exception:  # pragma: no cover - defensive
+        plan_text = None
+    try:
+        row = conn.execute(
+            "SELECT content FROM messages WHERE run_id=? AND agent_name='results_validator' "
+            "AND role='assistant' AND TRIM(content) != '' "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if row is not None and row[0]:
+            validator_summary = _maybe_parse_json(row[0]) or row[0]
+    except Exception:  # pragma: no cover - defensive
+        validator_summary = None
+    return plan_text, validator_summary
 
 
 def _drive_loop(
@@ -507,6 +781,7 @@ def _drive_loop(
     max_tool_rounds: int,
     enable_checkpoints: bool,
     handoffs_so_far: int = 0,
+    code_review_cycles_so_far: int = 0,
 ) -> tuple[str, str | None, int]:
     """Run the chain forward. Returns (final_status, note, handoffs_used).
 
@@ -527,29 +802,42 @@ def _drive_loop(
     final_status = "completed"
     note: str | None = None
 
-    # Cap on consecutive code_review firings in this _drive_loop pass.
-    # The counter is local to this invocation; resume_run starts a fresh
-    # _drive_loop with code_review_cycles=0, so a pause naturally resets
-    # the cap after the operator approves at CP3.
-    code_review_cycles = 0
+    # Cap on consecutive code_review firings in this _drive_loop pass. A
+    # CHECKPOINT resume passes 0 (operator approval at CP3 intentionally resets
+    # the cap); a MANUAL-pause resume threads the saved count back so a pause
+    # mid-revise-loop doesn't silently hand the model a fresh revision budget.
+    code_review_cycles = code_review_cycles_so_far
     max_code_review_cycles = _max_code_review_cycles(cfg)
 
     try:
         while True:
             agent = _build_agent(cfg, current_agent_name)
             prompt = load_prompt(agent.system_prompt_path)
+            # Substitute the {{PROJECT_CONTEXT}} marker with this project's own
+            # domain / objective / dataset facts (from projects/<id>/config.toml)
+            # so the shared prompt is not hardcoded to one domain. Removing the
+            # baked-in chest-xray block stopped the local model from emitting
+            # medical scaffolding into unrelated projects (see project_context).
+            # No-op for prompts without the marker.
+            _projects_root = cfg.root / cfg.default.get("paths", {}).get("projects_dir", "projects")
+            prompt = replace(
+                prompt,
+                system_text=inject_project_context(prompt.system_text, _projects_root, project_id),
+            )
             inbound_text = current_payload or "(no payload)"
 
-            # code_review has no file-reading tool, so an empty handoff payload
-            # (upstream code_gen/test_gen exhausted its tool rounds and emitted
-            # no content — a recurring qwen3-coder failure mode) would make the
-            # review a no-op and open a degenerate CP3 carrying a "(no payload)"
-            # complaint. Rebuild its input from the sandbox on disk so the
-            # review always runs against the real code/tests. Single guard here
-            # covers every path that can feed code_review an empty payload
-            # (forced handoff, resume, manual re-entry).
-            if current_agent_name == "code_review" and (
-                not current_payload or not current_payload.strip()
+            # code_review has no file-reading tool, so a handoff payload with
+            # nothing real to review — empty (upstream agent exhausted its tool
+            # rounds and emitted no content) OR a short structureless fragment
+            # (a forced handoff forwarding a mid-sentence scrap) — would make
+            # the review a no-op: it opens a degenerate CP3 carrying a
+            # "(no payload)"/"your message got cut off" complaint instead of a
+            # verdict. Rebuild its input from the sandbox on disk so the review
+            # always runs against the real code/tests. Single guard here covers
+            # every path that can feed code_review a thin payload (forced
+            # handoff, resume, manual re-entry).
+            if current_agent_name == "code_review" and _is_thin_code_review_payload(
+                current_payload or ""
             ):
                 projects_root = cfg.root / cfg.default.get("paths", {}).get(
                     "projects_dir", "projects"
@@ -558,12 +846,46 @@ def _drive_loop(
                     project_id=project_id, projects_root=projects_root,
                 )
                 if rebuilt:
-                    inbound_text = rebuilt
                     log.warning(
                         "run.code_review_payload_reconstructed",
                         agent=current_agent_name,
                         chars=len(rebuilt),
+                        thin_payload_chars=len((current_payload or "").strip()),
                     )
+                    inbound_text = rebuilt
+
+            # paper_writer drafts the results section from its inbound `results`
+            # and grounds the paper in `plan`. results_validator (an LLM) often
+            # forwards a placeholder plan + empty results (observed 2026-06-18,
+            # run_e93293803c98), leaving paper_writer nothing to write — it then
+            # emits a shell of [RESULT FROM run]/[CITATION NEEDED] markers that
+            # peer_reviewer rejects outright (a degenerate CP5). Rebuild its
+            # input from the run's real plan (the code_gen input in the DB) and
+            # the materialised result JSON in the sandbox so the paper is
+            # written against actual numbers.
+            if current_agent_name == "paper_writer" and _is_thin_paper_writer_payload(
+                current_payload or ""
+            ):
+                projects_root = cfg.root / cfg.default.get("paths", {}).get(
+                    "projects_dir", "projects"
+                )
+                plan_text, validator_summary = _fetch_plan_and_validator(conn, run_id)
+                rebuilt = build_paper_writer_payload_from_sandbox(
+                    project_id=project_id,
+                    projects_root=projects_root,
+                    plan_text=plan_text,
+                    validator_summary=validator_summary,
+                )
+                if rebuilt:
+                    log.warning(
+                        "run.paper_writer_payload_reconstructed",
+                        agent=current_agent_name,
+                        chars=len(rebuilt),
+                        thin_payload_chars=len((current_payload or "").strip()),
+                        had_plan=bool(plan_text),
+                        had_validator_summary=validator_summary is not None,
+                    )
+                    inbound_text = rebuilt
 
             result = _invoke_agent(
                 conn=conn,
@@ -579,6 +901,28 @@ def _drive_loop(
 
             if current_agent_name == "code_review":
                 code_review_cycles += 1
+
+            # Regression detector: paper_writer must never ship unfilled
+            # placeholders. Even after the input is reconstructed above, a
+            # weaker model could still leave a [RESULT FROM run]/[CITATION
+            # NEEDED]/CITATION_NEEDED_* marker — which is a guaranteed
+            # peer_reviewer rejection. Surface it loudly in the run log (and so
+            # at CP5) instead of letting it look like a clean draft.
+            if current_agent_name == "paper_writer":
+                _lc = (result.content or "").lower()
+                leftover = [
+                    m for m in ("[result from run]", "result from run",
+                                "[citation needed]", "citation_needed")
+                    if m in _lc
+                ]
+                if leftover:
+                    log.warning(
+                        "run.paper_writer_unfilled_placeholders",
+                        agent=current_agent_name,
+                        markers=leftover,
+                        note="draft still carries placeholders — peer_reviewer "
+                             "will reject; check that results were materialised.",
+                    )
 
             # Safety net for the "agent emits files: [{path, content}, ...] in
             # JSON instead of calling write_file per file" failure mode (see
@@ -894,6 +1238,7 @@ def resume_run(
             next_agent = pause.next_agent
             next_payload = pause.next_payload or ""
             handoffs_so_far = pause.handoffs_so_far or 0
+            code_review_cycles_so_far = pause.code_review_cycles or 0
             log.info(
                 "run.resume_from_manual_pause",
                 next_agent=next_agent,
@@ -930,6 +1275,7 @@ def resume_run(
                 max_tool_rounds=max_tool_rounds,
                 enable_checkpoints=True,
                 handoffs_so_far=handoffs_so_far,
+                code_review_cycles_so_far=code_review_cycles_so_far,
             )
             end_run(conn, run_id, final_status, note)
             conn.commit()

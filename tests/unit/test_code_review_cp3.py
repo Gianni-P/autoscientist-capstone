@@ -165,7 +165,7 @@ def test_runner_does_not_open_cp3_on_first_revise(
         )
 
     monkeypatch.setattr(mock_client, "_fix_code_review", _revise)
-    mock_client._FIXTURES["code_review"] = _revise
+    monkeypatch.setitem(mock_client._FIXTURES, "code_review", _revise)
 
     cfg = runner_env
     # Cap the handoff count tight so the run stops quickly without piling up.
@@ -207,7 +207,7 @@ def test_runner_loop_cap_forces_cp3_after_n_revisions(
         )
 
     monkeypatch.setattr(mock_client, "_fix_code_review", _revise)
-    mock_client._FIXTURES["code_review"] = _revise
+    monkeypatch.setitem(mock_client._FIXTURES, "code_review", _revise)
 
     cfg = runner_env
     run_id = run(
@@ -266,7 +266,7 @@ def test_runner_resume_after_loop_cap_resets_counter(
         )
 
     monkeypatch.setattr(mock_client, "_fix_code_review", _revise)
-    mock_client._FIXTURES["code_review"] = _revise
+    monkeypatch.setitem(mock_client._FIXTURES, "code_review", _revise)
 
     cfg = runner_env
     run_id = run(

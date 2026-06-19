@@ -31,6 +31,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import structlog
+
+log = structlog.get_logger("autoscientist.meta.anchors")
+
 
 @dataclass(frozen=True)
 class Anchor:
@@ -109,9 +113,10 @@ def load_anchor_set(
     """Load every ``*.json`` file under ``prompts/anchors/<agent>/``.
 
     Files are sorted by name for determinism. ``strict=True`` (default)
-    raises if a file fails to parse; ``strict=False`` skips the bad file
-    after logging — useful while curating new anchors that aren't valid
-    yet.
+    raises on a file that fails to parse OR whose declared agent mismatches
+    the directory OR whose ``anchor_id`` duplicates another; ``strict=False``
+    skips the offending file after logging — useful while curating new anchors
+    that aren't valid yet.
     """
     base = anchors_dir(prompts_dir, agent)
     if not base.exists():
@@ -121,17 +126,18 @@ def load_anchor_set(
     for path in sorted(base.glob("*.json")):
         try:
             a = load_anchor_file(path)
+            if a.agent != agent:
+                raise ValueError(
+                    f"anchor {path}: declared agent {a.agent!r} does not "
+                    f"match directory {agent!r}"
+                )
+            if a.anchor_id in seen_ids:
+                raise ValueError(f"duplicate anchor_id {a.anchor_id!r} in {path}")
         except (ValueError, json.JSONDecodeError):
             if strict:
                 raise
+            log.warning("meta.anchors.skipped_invalid", path=str(path))
             continue
-        if a.agent != agent:
-            raise ValueError(
-                f"anchor {path}: declared agent {a.agent!r} does not "
-                f"match directory {agent!r}"
-            )
-        if a.anchor_id in seen_ids:
-            raise ValueError(f"duplicate anchor_id {a.anchor_id!r} in {path}")
         seen_ids.add(a.anchor_id)
         found.append(a)
     return AnchorSet(agent=agent, anchors=tuple(found))

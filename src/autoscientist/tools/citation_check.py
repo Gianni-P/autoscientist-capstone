@@ -66,6 +66,20 @@ def _title_similarity(a: str | None, b: str | None) -> float:
     return inter / union if union else 0.0
 
 
+def _coerce_year(value: Any) -> int | None:
+    """Extract a 4-digit year from LLM-supplied input. None if unparseable.
+
+    Tolerates ``"2017a"``/``"2017 (preprint)"`` (-> 2017) and ``"n.d."``/``"in
+    press"``/``""`` (-> None) without raising, unlike a bare ``int(value)``.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    m = re.search(r"\d{4}", str(value))
+    return int(m.group()) if m else None
+
+
 def _first_author_surname(authors: list[str] | None) -> str | None:
     if not authors:
         return None
@@ -83,6 +97,7 @@ def verify_citation(
     citation: dict[str, Any],
     *,
     title_threshold: float = 0.6,
+    title_only_threshold: float = 0.85,
     year_tolerance: int = 1,
     conn: sqlite3.Connection | None = None,
 ) -> CitationCheck:
@@ -105,12 +120,21 @@ def verify_citation(
     year = citation.get("year")
     ident = citation.get("doi_or_arxiv") or ""
 
-    doi = ident if "/" in ident and not ident.lower().startswith("arxiv:") else None
+    # Classify the identifier as arXiv vs DOI. arXiv has two forms: new-style
+    # (1706.03762) and OLD-style (math.GT/0309136, cs.LG/0501001) — the latter
+    # contains a '/' and must NOT be mistaken for a DOI (which would be sent to
+    # a DOI resolver and never match).
+    lid = ident.lower()
     arxiv_id = None
-    if ident.lower().startswith("arxiv:"):
+    doi = None
+    if lid.startswith("arxiv:"):
         arxiv_id = ident.split(":", 1)[1]
     elif re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", ident):
-        arxiv_id = ident
+        arxiv_id = ident  # new-style
+    elif re.match(r"^[a-z-]+(\.[A-Za-z]{2})?/\d{7}(v\d+)?$", ident):
+        arxiv_id = ident  # old-style (category/number)
+    elif "/" in ident:
+        doi = ident
 
     matched: Paper | None = None
     confidence = 0.0
@@ -124,7 +148,8 @@ def verify_citation(
         else:
             reasons.append(f"id_lookup_failed:{ident}")
 
-    # 2. Title fallback.
+    # 2. Title fallback (no DOI/arXiv to anchor on).
+    matched_via_title_only = False
     if matched is None and title:
         results = literature.search(title, limit=5, conn=conn)
         best: tuple[float, Paper] | None = None
@@ -132,12 +157,18 @@ def verify_citation(
             sim = _title_similarity(title, p.title)
             if best is None or sim > best[0]:
                 best = (sim, p)
-        if best and best[0] >= title_threshold:
+        # Demand a much higher title similarity than the ID-corroborated
+        # cross-check uses: a 0.6 Jaccard on academic titles that share common
+        # words readily latches onto a DIFFERENT real paper, which would then be
+        # reported 'verified' against the wrong work — the exact failure this
+        # module exists to prevent.
+        if best and best[0] >= title_only_threshold:
             matched = best[1]
             confidence = best[0]
+            matched_via_title_only = True
         elif best:
             reasons.append(
-                f"title_below_threshold:best_sim={best[0]:.2f}<{title_threshold}"
+                f"title_below_threshold:best_sim={best[0]:.2f}<{title_only_threshold}"
             )
         else:
             reasons.append("no_title_search_results")
@@ -169,14 +200,24 @@ def verify_citation(
         reasons.append(
             f"first_author_mismatch:claimed={claimed_surname},found={found_surname}"
         )
-    if (
-        year is not None
-        and matched.year is not None
-        and abs(int(year) - int(matched.year)) > year_tolerance
+    claimed_year = _coerce_year(year)
+    found_year = _coerce_year(matched.year)
+    if year is not None and claimed_year is None:
+        reasons.append(f"year_unparseable:claimed={year!r}")
+    elif (
+        claimed_year is not None
+        and found_year is not None
+        and abs(claimed_year - found_year) > year_tolerance
     ):
         reasons.append(
             f"year_mismatch:claimed={year},found={matched.year}"
         )
+
+    # A title-only match (no DOI/arXiv anchor) is too weak to call 'verified'
+    # unless corroborated by BOTH a first-author surname and a year. Otherwise a
+    # fuzzy title alone — with no author/year to cross-check — would pass.
+    if matched_via_title_only and (claimed_surname is None or claimed_year is None):
+        reasons.append("weak_title_only_match:missing_author_or_year_corroboration")
 
     verified = len(reasons) == 0
     return CitationCheck(

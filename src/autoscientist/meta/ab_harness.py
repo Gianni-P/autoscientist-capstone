@@ -28,10 +28,8 @@ the picking-the-winner behavior can be exercised offline.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import sqlite3
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -161,33 +159,26 @@ def _run_candidate(
     variant_prompt: str,
     anchor: Anchor,
     cfg: Config,
+    project_id: str | None = None,
+    run_id: str | None = None,
 ) -> str:
     """Invoke the agent with the variant prompt as system + anchor as user.
 
     Returns the raw assistant content. We don't parse it here — the
     judge sees it verbatim.
     """
-    # Keep the call path identical to production: write the prompt to a
-    # temp file (so future tooling that key off ``system_prompt_path``
-    # still works) but route via ``router.route`` directly so we don't
-    # have to materialize a full Agent.
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".md", delete=False, encoding="utf-8",
-    ) as tf:
-        tf.write(variant_prompt)
-        tmp_path = Path(tf.name)
-    try:
-        result = route(
-            conn=conn,
-            agent_name=agent,
-            system=variant_prompt,
-            messages=[{"role": "user", "content": anchor.input_payload}],
-            cfg=cfg,
-        )
-        return result.content
-    finally:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
+    # Route via ``router.route`` directly with the variant text as the system
+    # prompt — no need to materialize a full Agent or a temp prompt file.
+    result = route(
+        conn=conn,
+        agent_name=agent,
+        system=variant_prompt,
+        messages=[{"role": "user", "content": anchor.input_payload}],
+        cfg=cfg,
+        project_id=project_id,
+        run_id=run_id,
+    )
+    return result.content
 
 
 def run_ab(
@@ -200,12 +191,19 @@ def run_ab(
     run_label: str = "ab",
     cfg: Config | None = None,
     judge_envelope_per_anchor: dict[str, dict[str, Any]] | None = None,
+    project_id: str | None = None,
+    run_id: str | None = None,
 ) -> ABResult:
     """Evaluate ``variants`` x ``anchors``; persist eval_runs rows; pick a winner.
 
     ``judge_envelope_per_anchor`` lets smoke tests inject deterministic
     mock scores keyed by anchor id (passed through to
     :func:`eval_rubrics.score_output` as ``extra_envelope``).
+
+    Pass ``project_id`` (and optionally ``run_id``) so the candidate and judge
+    calls are attributed to the project budget ledger and gated by its
+    per-project soft cap — without it an A/B sweep (n_variants x n_anchors
+    candidate + judge calls) spends uncapped and lands in the ledger unattributed.
     """
     cfg = cfg or load_config()
     if not variants:
@@ -232,6 +230,8 @@ def run_ab(
                 variant_prompt=variant.prompt_text,
                 anchor=anchor,
                 cfg=cfg,
+                project_id=project_id,
+                run_id=run_id,
             )
             extra = None
             if judge_envelope_per_anchor:
@@ -244,6 +244,8 @@ def run_ab(
                 candidate_output=output,
                 cfg=cfg,
                 extra_envelope=extra,
+                project_id=project_id,
+                run_id=run_id,
             )
             eval_rubrics.persist_eval_run(
                 conn,
@@ -252,7 +254,7 @@ def run_ab(
                 anchor_id=anchor.anchor_id,
                 candidate_output=output,
                 score=score,
-                judge_cost_usd=0.0,
+                judge_cost_usd=score.judge_cost_usd,
                 note=run_label,
             )
             per_anchor[anchor.anchor_id] = score.total

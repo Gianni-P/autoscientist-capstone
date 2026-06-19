@@ -52,6 +52,33 @@ DEFAULT_ALLOWED_EXECUTABLES: tuple[str, ...] = ("python", "python3", "pytest")
 # in WSL). `--` terminates unshare's own option parsing.
 _NETNS_WRAPPER: tuple[str, ...] = ("unshare", "--map-root-user", "--net", "--")
 
+# Secret-bearing env vars are scrubbed from the inherited environment before it
+# reaches generated, untrusted code (2026-06-18 audit). Otherwise a `python
+# train.py` could read ANTHROPIC_API_KEY / GITHUB_PERSONAL_ACCESS_TOKEN /
+# BIMCV_TOKEN straight out of os.environ and write them to the sandbox or logs.
+# We filter by substring (catches *_API_KEY/*_TOKEN/… without enumerating every
+# provider) plus an explicit name backstop; benign vars (PATH, HOME, CUDA_*,
+# VIRTUAL_ENV, …) are preserved so normal training code still runs.
+_SECRET_ENV_SUBSTRINGS: tuple[str, ...] = (
+    "API_KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL",
+    "ACCESS_KEY", "PRIVATE_KEY", "SESSION_KEY",
+)
+_SECRET_ENV_NAMES: frozenset[str] = frozenset({
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_PERSONAL_ACCESS_TOKEN",
+    "GH_TOKEN", "BIMCV_TOKEN", "KAGGLE_KEY", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN",
+})
+
+
+def _scrub_secret_env(env: dict[str, str]) -> dict[str, str]:
+    """Drop secret-bearing variables from a child environment. Case-insensitive."""
+    scrubbed: dict[str, str] = {}
+    for key, value in env.items():
+        upper = key.upper()
+        if key in _SECRET_ENV_NAMES or any(tok in upper for tok in _SECRET_ENV_SUBSTRINGS):
+            continue
+        scrubbed[key] = value
+    return scrubbed
+
 
 @dataclass
 class ExecutionResult:
@@ -152,6 +179,7 @@ def execute(
     allowed_executables: tuple[str, ...] | None = DEFAULT_ALLOWED_EXECUTABLES,
     allow_network: bool = False,
     require_network_isolation: bool = True,
+    scrub_secrets: bool = True,
 ) -> ExecutionResult:
     """Run ``cmd`` in the project's sandbox with resource limits + timeout.
 
@@ -188,6 +216,10 @@ def execute(
         allow_network: permit outbound network (default False → isolate).
         require_network_isolation: when network is disallowed but no isolation
             mechanism exists, raise instead of running networked (default True).
+        scrub_secrets: when inheriting the parent env (``env is None``), strip
+            secret-bearing vars (``*_API_KEY``/``*_TOKEN``/… and a name backstop)
+            so untrusted generated code can't read them (default True). Ignored
+            when ``env`` is supplied explicitly.
     """
     projects_root = Path(projects_root)
     sandbox = _ensure_sandbox(project_id, projects_root)
@@ -237,7 +269,16 @@ def execute(
                 platform=sys.platform,
             )
 
-    child_env = dict(env if env is not None else os.environ)
+    # Inherit the parent environment only when the caller did not supply one,
+    # and scrub secrets out of that inherited copy by default so untrusted
+    # generated code can't read API keys / tokens. An explicitly-passed env is
+    # the caller's responsibility and is used verbatim.
+    if env is not None:
+        child_env = dict(env)
+    else:
+        child_env = dict(os.environ)
+        if scrub_secrets:
+            child_env = _scrub_secret_env(child_env)
     if extra_path_entries:
         existing = child_env.get("PATH", "")
         child_env["PATH"] = os.pathsep.join([*extra_path_entries, existing]) if existing else os.pathsep.join(extra_path_entries)
@@ -285,7 +326,11 @@ def execute(
                         os.killpg(proc.pid, signal.SIGKILL)
                 else:
                     proc.kill()
-                proc.wait()
+                # Bound the reap so a child stuck in uninterruptible sleep (or
+                # re-parented outside the group) can't hang the call forever
+                # while still holding the open log file handles.
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=30)
                 exit_code = proc.returncode if proc.returncode is not None else -signal.SIGKILL
     finally:
         elapsed_ms = int((time.monotonic() - started) * 1000)

@@ -39,7 +39,9 @@ def read_sandbox_file(
     if rel.is_absolute():
         raise SandboxEscape(f"path must be relative, got: {path}")
     src = (sandbox / rel).resolve()
-    if not str(src).startswith(str(sandbox.resolve())):
+    # Real path-boundary containment (not a string prefix, which would accept a
+    # prefix-colliding sibling like ``../sandbox_x/secret``).
+    if not src.is_relative_to(sandbox.resolve()):
         raise SandboxEscape(f"path escapes sandbox: {path}")
     if not src.exists():
         raise FileNotFoundError(f"no such file in sandbox: {path}")

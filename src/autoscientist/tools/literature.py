@@ -22,6 +22,7 @@ Failure modes:
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import time
 from dataclasses import asdict, dataclass, field
@@ -203,6 +204,19 @@ def _openalex_lookup(*, doi: str | None) -> Paper | None:
 # arxiv
 # ---------------------------------------------------------------------------
 
+def _clean_arxiv_id(entry_id: str | None) -> str | None:
+    """Reduce an arXiv entry_id URL to a bare id without the version suffix.
+
+    ``http://arxiv.org/abs/1706.03762v5`` -> ``1706.03762``. Keeping the
+    ``vN`` suffix (or the full URL) broke (arxiv_id, doi) dedup and downstream
+    id lookups.
+    """
+    if not entry_id:
+        return None
+    raw = entry_id.rstrip("/").rsplit("/", 1)[-1]
+    return re.sub(r"v\d+$", "", raw) or None
+
+
 def _arxiv_search(query: str, limit: int) -> list[Paper]:
     """Use the ``arxiv`` library — XML feed parsing is a pain by hand."""
     import arxiv  # lazy import; large module
@@ -217,7 +231,7 @@ def _arxiv_search(query: str, limit: int) -> list[Paper]:
             year=r.published.year if r.published else None,
             venue="arxiv",
             doi=r.doi,
-            arxiv_id=r.entry_id.split("/")[-1] if r.entry_id else None,
+            arxiv_id=_clean_arxiv_id(r.entry_id),
             abstract=r.summary,
             citation_count=None,
             source="arxiv",
@@ -274,16 +288,19 @@ def search(
 
     started = time.monotonic()
     results: list[Paper] = []
+    errored = False
     try:
         results = _s2_search(query, limit)
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:  # ValueError = JSONDecodeError on a bad 200 body
+        errored = True
         log.warning("literature.s2.error", error=str(e))
 
     if not results:
         log.info("literature.s2.empty_or_failed", q=query[:60])
         try:
             results = _openalex_search(query, limit)
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
+            errored = True
             log.warning("literature.openalex.error", error=str(e))
 
     if include_arxiv:
@@ -294,6 +311,7 @@ def search(
                 if (p.arxiv_id, p.doi) not in seen:
                     results.append(p)
         except Exception as e:  # arxiv lib raises a variety of exceptions
+            errored = True
             log.warning("literature.arxiv.error", error=str(e))
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -301,7 +319,10 @@ def search(
         "literature.search.done",
         q=query[:60], n=len(results), elapsed_ms=elapsed_ms,
     )
-    if conn is not None:
+    # Never cache an EMPTY result that came from a provider error — that would
+    # pin a transient network failure as the permanent answer for this query.
+    # A genuinely-empty result (no error) is safe to cache.
+    if conn is not None and not (errored and not results):
         tool_cache.cache_put(
             conn,
             "literature.search",

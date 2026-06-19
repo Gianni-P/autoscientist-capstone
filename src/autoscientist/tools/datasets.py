@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import httpx
 import structlog
@@ -157,19 +157,49 @@ def _fetch_kaggle(spec: DatasetSpec, dest_dir: Path) -> Path:
     return dest_dir
 
 
+def _safe_download_name(target: str, fallback_stem: str) -> str:
+    """Derive a safe single-segment filename from a URL.
+
+    The last path segment of an arbitrary URL is untrusted: a URL ending in
+    ``/..`` or containing path separators must not be written into a parent of
+    ``dest_dir``. We strip query/fragment, take the final segment, and reduce it
+    to a bare name component, falling back to ``<stem>.bin`` for empty/``.``/``..``.
+    """
+    raw = target.split("?", 1)[0].split("#", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    candidate = PurePosixPath(raw).name
+    if not candidate or candidate in (".", ".."):
+        return f"{fallback_stem}.bin"
+    return candidate
+
+
+def _stream_to_file(target: str, out: Path, *, headers: dict[str, str] | None = None, timeout: float) -> None:
+    """Stream ``target`` to ``out`` atomically: download to ``.part`` then rename.
+
+    An interruption mid-download leaves only the ``.part`` temp file, never a
+    truncated file at the final path (which ``is_present`` would later accept as
+    a complete, valid download).
+    """
+    tmp = out.with_name(out.name + ".part")
+    try:
+        with httpx.stream("GET", target, headers=headers, follow_redirects=True, timeout=timeout) as r:
+            r.raise_for_status()
+            with tmp.open("wb") as f:
+                for chunk in r.iter_bytes(chunk_size=1 << 20):
+                    f.write(chunk)
+        os.replace(tmp, out)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
 def _fetch_http(spec: DatasetSpec, dest_dir: Path, *, url: str | None = None) -> Path:
     target = url or spec.http_url
     if not target:
         raise ValueError(f"dataset {spec.name} has no http_url")
     dest_dir.mkdir(parents=True, exist_ok=True)
-    fname = target.rstrip("/").rsplit("/", 1)[-1] or f"{spec.name}.bin"
-    out = dest_dir / fname
+    out = dest_dir / _safe_download_name(target, spec.name)
     log.info("datasets.http.fetch.start", url=target, dest=str(out))
-    with httpx.stream("GET", target, follow_redirects=True, timeout=300.0) as r:
-        r.raise_for_status()
-        with out.open("wb") as f:
-            for chunk in r.iter_bytes(chunk_size=1 << 20):
-                f.write(chunk)
+    _stream_to_file(target, out, timeout=300.0)
     log.info("datasets.http.fetch.done", path=str(out), bytes=out.stat().st_size)
     return dest_dir
 
@@ -193,15 +223,10 @@ def _fetch_bimcv(spec: DatasetSpec, dest_dir: Path, *, url: str | None = None) -
         raise FetchSkippedError(f"{spec.name}: BIMCV_TOKEN env var not set")
 
     dest_dir.mkdir(parents=True, exist_ok=True)
-    fname = target.rstrip("/").rsplit("/", 1)[-1] or f"{spec.name}.bin"
-    out = dest_dir / fname
+    out = dest_dir / _safe_download_name(target, spec.name)
     headers = {"Authorization": f"Bearer {token}"}
     log.info("datasets.bimcv.fetch.start", url=target, dest=str(out))
-    with httpx.stream("GET", target, headers=headers, follow_redirects=True, timeout=600.0) as r:
-        r.raise_for_status()
-        with out.open("wb") as f:
-            for chunk in r.iter_bytes(chunk_size=1 << 20):
-                f.write(chunk)
+    _stream_to_file(target, out, headers=headers, timeout=600.0)
     log.info("datasets.bimcv.fetch.done", path=str(out))
     return dest_dir
 

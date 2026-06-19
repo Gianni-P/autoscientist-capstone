@@ -18,9 +18,10 @@ from __future__ import annotations
 import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
-from autoscientist.state.db import month_key, now_iso
+from autoscientist.state.db import month_key
 
 
 class BudgetExceeded(RuntimeError):
@@ -87,6 +88,16 @@ def assert_can_spend(
     *,
     month: str | None = None,
 ) -> None:
+    """Raise :class:`BudgetExceeded` if this charge would breach the monthly cap.
+
+    Concurrency caveat: this is a read-then-act check that straddles the LLM
+    call before :func:`record_charge` runs, so under CONCURRENT writers (two
+    runner processes spending in the same month) both can read the same stale
+    total, both pass, and the cap can be overshot by up to one in-flight call
+    each. It is a hard guarantee only for serialized spending (the normal
+    single-runner mode). A fully race-free cap needs a reserve-before-call
+    ledger row inside a ``BEGIN IMMEDIATE`` transaction; tracked as follow-up.
+    """
     allowed, spent, projected = can_spend(conn, cfg, estimated_cost_usd, month=month)
     if not allowed:
         raise BudgetExceeded(
@@ -109,6 +120,10 @@ def record_charge(
     cost_usd: float,
     cache_hit: bool,
 ) -> None:
+    # Derive created_at and month_key from ONE instant so a charge logged at the
+    # UTC month boundary can't land its timestamp and its month bucket in
+    # different months.
+    ts = datetime.now(UTC)
     conn.execute(
         """INSERT INTO budget_ledger (
             run_id, agent_name, provider, model,
@@ -118,7 +133,7 @@ def record_charge(
         (
             run_id, agent_name, provider, model,
             prompt_tokens, completion_tokens, float(cost_usd), int(cache_hit),
-            now_iso(), month_key(),
+            ts.isoformat(timespec="milliseconds"), month_key(ts),
         ),
     )
 

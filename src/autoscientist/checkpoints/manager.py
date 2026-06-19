@@ -195,8 +195,14 @@ def get_checkpoint(conn: sqlite3.Connection, checkpoint_id: str) -> CheckpointRe
 
 
 def latest_checkpoint(conn: sqlite3.Connection, run_id: str) -> CheckpointRecord | None:
+    # created_at has millisecond precision, so two checkpoints opened in the
+    # same ms have undefined order under a pure created_at sort — and resume_run
+    # depends on this to pick the operative checkpoint. The rowid tiebreaker
+    # (monotonic insert order) makes "latest" deterministic, matching the
+    # pattern already used in meta/versioning.py.
     row = conn.execute(
-        "SELECT * FROM checkpoints WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM checkpoints WHERE run_id = ? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
         (run_id,),
     ).fetchone()
     return _row_to_record(row) if row else None
@@ -204,7 +210,8 @@ def latest_checkpoint(conn: sqlite3.Connection, run_id: str) -> CheckpointRecord
 
 def list_pending(conn: sqlite3.Connection) -> list[CheckpointRecord]:
     rows = conn.execute(
-        "SELECT * FROM checkpoints WHERE status = 'pending' ORDER BY created_at DESC"
+        "SELECT * FROM checkpoints WHERE status = 'pending' "
+        "ORDER BY created_at DESC, rowid DESC"
     ).fetchall()
     return [_row_to_record(r) for r in rows]
 

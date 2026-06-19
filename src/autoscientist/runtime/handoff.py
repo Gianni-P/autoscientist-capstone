@@ -18,7 +18,15 @@ from dataclasses import dataclass
 
 DONE = "DONE"
 
-_HANDOFF_RE = re.compile(r"^\s*HANDOFF:\s*(\S+)\s*$", re.MULTILINE)
+# Capture only the target token at the start of a HANDOFF line. Deliberately
+# does NOT anchor to end-of-line: the shipped prompts decorate the directive
+# (``HANDOFF: code_gen   # if revise``, ``HANDOFF: <repo_publisher if accept…>``),
+# and an end-anchored ``(\S+)$`` rejected those outright — returning None and
+# silently dropping the handoff. Optional leading ``<`` absorbs the placeholder
+# form; the rest of the line (comment / conditional prose) is ignored.
+_HANDOFF_RE = re.compile(
+    r"^[ \t]*HANDOFF:[ \t]*<?([A-Za-z_][A-Za-z0-9_]*|DONE)\b", re.MULTILINE
+)
 
 
 @dataclass(frozen=True)
@@ -33,14 +41,21 @@ class Handoff:
 
 
 def parse_handoff(content: str, from_agent: str) -> Handoff | None:
-    """Look for a ``HANDOFF: <target>`` directive on its own line.
+    """Look for a ``HANDOFF: <target>`` directive at the start of a line.
+
+    When several directives appear (an illustrative one in the body plus the
+    real one at the end, or a file body that literally contains the token), the
+    LAST is operative: agents are instructed to end their turn with it and the
+    runner appends the structured-handoff directive at the end. The payload is
+    everything after the directive's line.
 
     Returns ``None`` if no directive — the runner treats this as terminal.
-    The payload is everything after the directive line.
     """
-    m = _HANDOFF_RE.search(content)
-    if not m:
+    matches = list(_HANDOFF_RE.finditer(content))
+    if not matches:
         return None
+    m = matches[-1]
     target = m.group(1).strip()
-    payload = content[m.end():].strip()
+    line_end = content.find("\n", m.end())
+    payload = content[line_end + 1:].strip() if line_end != -1 else ""
     return Handoff(from_agent=from_agent, to_agent=target, payload=payload)

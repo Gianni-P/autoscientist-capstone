@@ -52,7 +52,11 @@ def _slug(s: str | None, default: str) -> str:
 
 
 def _ts_for_path() -> str:
-    return now_iso().replace(":", "").replace("-", "").replace(".", "")[:15]
+    # Keep milliseconds (…[:18] -> YYYYMMDDTHHMMSSmmm). Truncating to 15 chars
+    # dropped the ms component, so two archives of the same agent within the
+    # same second collided and write_prompt's write_text silently overwrote the
+    # earlier snapshot. now_iso() already carries ms precision.
+    return now_iso().replace(":", "").replace("-", "").replace(".", "")[:18]
 
 
 def archive_path(prompts_dir: Path, agent_name: str, note: str | None = None) -> Path:
@@ -140,6 +144,7 @@ def write_prompt(
     target.write_text(new_text, encoding="utf-8")
 
     version_id = new_id("pv_")
+    created_at = now_iso()  # one timestamp for both the row and the return value
     conn.execute(
         """INSERT INTO prompt_versions
            (version_id, agent_name, prompt_text, parent_version_id,
@@ -150,7 +155,7 @@ def write_prompt(
             parent.version_id if parent else None,
             note,
             str(archived) if archived else None,
-            now_iso(),
+            created_at,
         ),
     )
     log.info(
@@ -167,7 +172,7 @@ def write_prompt(
         parent_version_id=parent.version_id if parent else None,
         note=note,
         archived_path=str(archived) if archived else None,
-        created_at=now_iso(),
+        created_at=created_at,
     )
 
 
@@ -192,6 +197,7 @@ def register_existing_prompt(
     if cur is not None and cur.prompt_text == text:
         return cur
     version_id = new_id("pv_")
+    created_at = now_iso()  # one timestamp for both the row and the return value
     conn.execute(
         """INSERT INTO prompt_versions
            (version_id, agent_name, prompt_text, parent_version_id,
@@ -200,7 +206,7 @@ def register_existing_prompt(
         (
             version_id, agent_name, text,
             cur.version_id if cur else None,
-            note, None, now_iso(),
+            note, None, created_at,
         ),
     )
     return PromptVersion(
@@ -210,7 +216,7 @@ def register_existing_prompt(
         parent_version_id=cur.version_id if cur else None,
         note=note,
         archived_path=None,
-        created_at=now_iso(),
+        created_at=created_at,
     )
 
 

@@ -1,0 +1,78 @@
+{
+  "experiment": "E3",
+  "run_id": "prod_s0_e3",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "grid_n": 300,
+  "ds": 0.002,
+  "sensitivity_ds": [
+    0.001,
+    0.002,
+    0.005
+  ],
+  "sensitivity_terrain": "rosenbrock_ridge",
+  "n_trials": 1980,
+  "n_main_trials": 1440,
+  "n_sensitivity_trials": 540,
+  "terrain_summaries": [
+    {
+      "terrain": "elliptic_paraboloid",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.06647373339818072,
+      "wall_seconds": 1.2160422801971436
+    },
+    {
+      "terrain": "rosenbrock_ridge",
+      "n_trials": 180,
+      "n_converged": 179,
+      "mean_path_length": 12.628315532725939,
+      "wall_seconds": 21.467153310775757
+    },
+    {
+      "terrain": "sinusoidal_valley",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.020894060860924955,
+      "wall_seconds": 0.22167015075683594
+    },
+    {
+      "terrain": "monkey_saddle",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.17286131277846614,
+      "wall_seconds": 2.0839977264404297
+    },
+    {
+      "terrain": "curved_valley",
+      "n_trials": 180,
+      "n_converged": 174,
+      "mean_path_length": 0.5774701218018584,
+      "wall_seconds": 8.013479948043823
+    },
+    {
+      "terrain": "anisotropic_bowl",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.24906767404819274,
+      "wall_seconds": 4.657507419586182
+    },
+    {
+      "terrain": "high_freq_valley",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.011271329960913215,
+      "wall_seconds": 0.09904146194458008
+    },
+    {
+      "terrain": "gaussian_basin",
+      "n_trials": 180,
+      "n_converged": 180,
+      "mean_path_length": 0.09227159316059694,
+      "wall_seconds": 1.9016225337982178
+    }
+  ]
+}

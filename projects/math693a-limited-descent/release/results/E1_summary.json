@@ -1,0 +1,211 @@
+{
+  "experiment": "E1",
+  "run_id": "prod_s0_e1",
+  "seed": 0,
+  "grid_n": 300,
+  "terrain_summaries": [
+    {
+      "terrain": "elliptic_paraboloid",
+      "n_starts": 30,
+      "reachable_cells": 1752,
+      "mean_qb": 0.014045191261025323,
+      "max_qb": 0.07969970878375549,
+      "wall_seconds": 0.29158687591552734,
+      "aborted": false
+    },
+    {
+      "terrain": "rosenbrock_ridge",
+      "n_starts": 30,
+      "reachable_cells": 18418,
+      "mean_qb": 0.04162943244637,
+      "max_qb": 0.08186635915207037,
+      "wall_seconds": 3.045743703842163,
+      "aborted": false
+    },
+    {
+      "terrain": "sinusoidal_valley",
+      "n_starts": 30,
+      "reachable_cells": 170,
+      "mean_qb": 0.01978866804628942,
+      "max_qb": 0.0798280055004141,
+      "wall_seconds": 0.030241012573242188,
+      "aborted": false
+    },
+    {
+      "terrain": "monkey_saddle",
+      "n_starts": 30,
+      "reachable_cells": 2258,
+      "mean_qb": 0.015194028019082945,
+      "max_qb": 0.08231739629991609,
+      "wall_seconds": 0.329514741897583,
+      "aborted": false
+    },
+    {
+      "terrain": "curved_valley",
+      "n_starts": 30,
+      "reachable_cells": 12393,
+      "mean_qb": 0.0450430067030593,
+      "max_qb": 0.07802573151301544,
+      "wall_seconds": 2.0799946784973145,
+      "aborted": false
+    },
+    {
+      "terrain": "anisotropic_bowl",
+      "n_starts": 30,
+      "reachable_cells": 5000,
+      "mean_qb": 0.009481290073416323,
+      "max_qb": 0.07768666169638808,
+      "wall_seconds": 0.7382276058197021,
+      "aborted": false
+    },
+    {
+      "terrain": "high_freq_valley",
+      "n_starts": 30,
+      "reachable_cells": 52,
+      "mean_qb": 0.029194920784618276,
+      "max_qb": 0.07987537725724467,
+      "wall_seconds": 0.012104988098144531,
+      "aborted": false
+    },
+    {
+      "terrain": "gaussian_basin",
+      "n_starts": 30,
+      "reachable_cells": 2820,
+      "mean_qb": 0.02096323104263571,
+      "max_qb": 0.08232332210013062,
+      "wall_seconds": 0.41446971893310547,
+      "aborted": false
+    }
+  ],
+  "n_trials": 240,
+  "n_validity_failures": 14,
+  "validity_failures": [
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        128,
+        189
+      ],
+      "detail": "theta*-geodesic deviation 0.0714 > tol 0.05 (direct_grade=0.0589 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        120,
+        168
+      ],
+      "detail": "theta*-geodesic deviation 0.0751 > tol 0.05 (direct_grade=0.0548 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        132,
+        179
+      ],
+      "detail": "theta*-geodesic deviation 0.1193 > tol 0.05 (direct_grade=0.0595 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        125,
+        192
+      ],
+      "detail": "theta*-geodesic deviation 0.3016 > tol 0.05 (direct_grade=0.0626 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        124,
+        191
+      ],
+      "detail": "theta*-geodesic deviation 0.1719 > tol 0.05 (direct_grade=0.0564 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        133,
+        185
+      ],
+      "detail": "theta*-geodesic deviation 0.4003 > tol 0.05 (direct_grade=0.0683 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        102,
+        176
+      ],
+      "detail": "theta*-geodesic deviation 0.5432 > tol 0.05 (direct_grade=0.0817 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        115,
+        163
+      ],
+      "detail": "theta*-geodesic deviation 0.5669 > tol 0.05 (direct_grade=0.0803 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        128,
+        165
+      ],
+      "detail": "theta*-geodesic deviation 0.5520 > tol 0.05 (direct_grade=0.0800 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        103,
+        177
+      ],
+      "detail": "theta*-geodesic deviation 0.4467 > tol 0.05 (direct_grade=0.0763 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        135,
+        175
+      ],
+      "detail": "theta*-geodesic deviation 0.5104 > tol 0.05 (direct_grade=0.0767 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        122,
+        196
+      ],
+      "detail": "theta*-geodesic deviation 0.4467 > tol 0.05 (direct_grade=0.0763 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        101,
+        179
+      ],
+      "detail": "theta*-geodesic deviation 0.8710 > tol 0.05 (direct_grade=0.0845 <= 0.0875)"
+    },
+    {
+      "terrain": "elliptic_paraboloid",
+      "check": "t1_geodesic",
+      "start": [
+        122,
+        198
+      ],
+      "detail": "theta*-geodesic deviation 0.7563 > tol 0.05 (direct_grade=0.0854 <= 0.0875)"
+    }
+  ],
+  "internal_validity_passed": false
+}

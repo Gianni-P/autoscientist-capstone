@@ -1,0 +1,74 @@
+{
+  "experiment": "E2",
+  "run_id": "prod_s0_e2",
+  "seed": 0,
+  "grid_n": 300,
+  "ds": 0.002,
+  "n_trials": 240,
+  "terrain_summaries": [
+    {
+      "terrain": "elliptic_paraboloid",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.05274812632819918,
+      "mean_feasibility_rate": 0.6379626951804613,
+      "wall_seconds": 0.2717447280883789
+    },
+    {
+      "terrain": "rosenbrock_ridge",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 12.664895904590136,
+      "mean_feasibility_rate": 0.9978064039975266,
+      "wall_seconds": 5.166727304458618
+    },
+    {
+      "terrain": "sinusoidal_valley",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.016296476484424758,
+      "mean_feasibility_rate": 0.6197594997594997,
+      "wall_seconds": 0.03130149841308594
+    },
+    {
+      "terrain": "monkey_saddle",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.11946084612583534,
+      "mean_feasibility_rate": 0.6137882348081488,
+      "wall_seconds": 0.3486330509185791
+    },
+    {
+      "terrain": "curved_valley",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.5781768271999935,
+      "mean_feasibility_rate": 0.9193758014303159,
+      "wall_seconds": 2.16764235496521
+    },
+    {
+      "terrain": "anisotropic_bowl",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.22944125519997918,
+      "mean_feasibility_rate": 0.709740467367667,
+      "wall_seconds": 0.77410888671875
+    },
+    {
+      "terrain": "high_freq_valley",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.009019018161584054,
+      "mean_feasibility_rate": 0.6098412698412697,
+      "wall_seconds": 0.0130767822265625
+    },
+    {
+      "terrain": "gaussian_basin",
+      "n_starts": 30,
+      "n_converged": 30,
+      "mean_path_length": 0.07491188197945622,
+      "mean_feasibility_rate": 0.6302170479134375,
+      "wall_seconds": 0.4274101257324219
+    }
+  ]
+}

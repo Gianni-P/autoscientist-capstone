@@ -41,8 +41,11 @@ for a in ("code_gen", "test_gen"):
     m = models.get(alias, {})
     print(f"[preflight] {a:9} -> alias={alias!r}  provider={m.get('provider')!r}  "
           f"model_id={m.get('model_id')!r}")
-    if m.get("model_id") != "qwen3-coder:30b":
-        print(f"[preflight] WARNING: {a} is NOT on qwen3-coder:30b — check models.toml / "
+    # Confirm it's a LOCAL model (ollama), not accidentally routed to Claude —
+    # the model_id varies (qwen3-coder:30b, the 64k builds, qwen2.5-32b-64k from
+    # fix 4), so check the provider rather than a name substring.
+    if m.get("provider") != "ollama":
+        print(f"[preflight] WARNING: {a} is NOT on a local (ollama) model — check models.toml / "
               f"that this is a fresh process.")
 
 # --- Pull the exact payload code_gen got in the cancelled run (the approved plan).

@@ -61,3 +61,30 @@ projects/*/build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Submission hygiene: local-only scratch, not part of the published project ---
+# Internal capstone strategy notes (the public project report is WRITEUP.md).
+CAPSTONE.md
+# Ad-hoc / debug scripts: the underscore convention marks scratch, and these
+# named one-offs drove specific math693a runs. Kept local; not reusable code.
+# (Already-tracked scripts such as scripts/_budget_status_v2.py stay committed —
+# .gitignore never untracks an existing file.)
+scripts/_*
+scripts/advance_*.py
+scripts/finalize_*.py
+scripts/assemble_final_paper.py
+scripts/implement_e2_e5.py
+scripts/kickoff_full.py
+scripts/regen_code_qwen3_guided.py
+scripts/rerun_paper_writer.py
+scripts/restart_codegen_opus.py
+scripts/resume_e2_e5_revision.py
+scripts/strengthen_e2_e5.py
+# Per-project archives and LaTeX build artifacts (keep .tex sources and the .pdf)
+projects/*/_archive_*/
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg

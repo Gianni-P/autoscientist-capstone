@@ -71,8 +71,8 @@ def test_list_sandbox_blocks_prefix_colliding_sibling(tmp_path):
 def test_scrub_secret_env_drops_keys_keeps_benign():
     env = {
         "PATH": "/usr/bin", "HOME": "/home/x", "CUDA_VISIBLE_DEVICES": "0",
-        "ANTHROPIC_API_KEY": "sk-ant-xxx",
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx",
+        "ANTHROPIC_API_KEY": "REDACTED-not-a-real-key",
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "REDACTED-not-a-real-token",
         "BIMCV_TOKEN": "t", "DB_PASSWORD": "p", "aws_secret_access_key": "s",
     }
     out = _scrub_secret_env(env)

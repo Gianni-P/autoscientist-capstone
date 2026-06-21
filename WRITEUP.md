@@ -1,6 +1,6 @@
 # autoscientist — A Human-Gated Harness for Trustworthy Autonomous Research
 
-**Subtitle:** Eleven specialist agents that turn a one-line research direction into a peer-reviewable paper *and* a reproducible code repository — with cost, safety, and correctness enforced by the harness, not hoped for from the model.
+**Subtitle:** Eleven specialist agents turn a research direction into a paper and a reproducible repo — safety and correctness enforced by the harness
 
 **Track:** Freestyle
 

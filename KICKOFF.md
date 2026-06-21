@@ -2,6 +2,27 @@
 
 This document is the starting point for building **autoscientist**, a multi-agent research pipeline that produces academic papers, supplementary documents, and reproducible code repositories from high-level research directions in scoped domains.
 
+> **Status note (2026-06-20) — read me first.** This is the original Phase-0
+> kickoff brief, preserved as the project's spec and north star. The system was
+> since built through all phases, and a few things evolved past what this brief
+> assumes:
+> - It is now **domain-general** — domain facts come from each project's own
+>   `config.toml`, not baked into prompts. The medical-imaging examples below
+>   describe the *original* target, not a hard constraint.
+> - The original `pneumonia-data-efficiency` example project (§8) has been
+>   **retired and removed**. The current **featured end-to-end deliverable is
+>   `math693a-limited-descent`** (a numerical-optimization study) — see
+>   `README.md` and `projects/math693a-limited-descent/`.
+> - **Model routing is now operator-selectable per leg** at each checkpoint (the
+>   web console's model picker, incl. an Opus-orchestrator → local-worker mode);
+>   current defaults live in `config/models.toml`. The monthly budget cap is
+>   currently **$200**.
+> - The primary operator console is now a push-based **web app** (Starlette/SSE);
+>   the Streamlit UI in §3 remains as a fallback.
+>
+> The architecture, principles (§4), checkpoints (§7), and verification (§5)
+> describe the system as built and remain accurate.
+
 You (Claude Code) are picking this up at Phase 0. Read this entire document before writing any code. Implement strictly in phase order — earlier phases are dependencies for later ones. When you finish a phase, run the smoke tests for it before moving on.
 
 ---
@@ -31,7 +52,7 @@ If you ever feel pressure to claim more capability than this, push back in your 
   - Operator referenced "Qwen3.6 27B" — this name is not a known official Qwen release. Run `ollama list` and use whatever 27B-class Qwen model is actually installed. Document the actual name in the config.
   - Ollama exposes an OpenAI-compatible endpoint at `http://localhost:11434/v1` — use that, not Open WebUI.
 - **Anthropic API:** key in env var `ANTHROPIC_API_KEY`. Verify it's set before any API call.
-- **Budget:** $50 starting balance, hard cap $150/month. The system **must** track spend and refuse new API calls when within $5 of the monthly cap. This is non-negotiable.
+- **Budget:** $50 starting balance, hard cap $150/month (later raised to **$200** — see the status note at the top). The system **must** track spend and refuse new API calls when within $5 of the monthly cap. This is non-negotiable.
 - **Python:** 3.12. Use `uv` for package management (install with `curl -LsSf https://astral.sh/uv/install.sh | sh` if absent).
 
 ---
@@ -189,6 +210,12 @@ Approve / reject / modify (free-text instructions to the next agent) / ask-quest
 ---
 
 ## 8. The example v1 test project
+
+> **Retired (2026-06-20).** This original v1 example project has been removed from
+> the repository. The section is kept to document the initial target and design
+> intent; the realized featured deliverable is `math693a-limited-descent` (see
+> `README.md`). The pipeline is domain-general — the medical-imaging design below
+> is illustrative of the *original* target, not the current featured project.
 
 Build the pipeline against this concrete project. It's the regression test — every change to the pipeline re-runs against this and we diff against a known-good output.
 

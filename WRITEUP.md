@@ -50,6 +50,10 @@ research direction
 
 The pipeline is deterministic code (`runtime/runner.py`): it invokes an agent, runs that agent's tool-use loop, parses a `HANDOFF: <target>` directive, and routes to the next agent. State lives **outside the model** in SQLite — runs, every message, checkpoints, and an append-only budget ledger — so the system is fully observable and resumable. A detached runner process drives the chain; a Starlette web console pushes live state over Server-Sent Events.
 
+## The operator console
+
+The console is where the human-in-the-loop actually happens, and it is the most visible part of the system. A push-based web app (Starlette + Server-Sent Events) renders every run live — a five-stage checkpoint stepper, the streaming activity feed, per-agent handoffs with the exact prompt each agent received, a budget meter, and the agent roster — with no polling. At each of the five gates the operator can **approve, approve-with-changes, re-run with a nudge, or reject**; and — the course-week addition (below) — **pick the model for each agent in the next leg**, including the Opus-orchestrator option for `code_gen`/`test_gen`. This is the security/HITL concept made tangible: the place where a human supplies the judgment the agents lack, and where model routing becomes a per-decision choice rather than a config edit. Ten annotated screenshots are in `docs/screenshots/` (and the project README).
+
 ## What the course changed — the increment I built during the course week
 
 The course crystallized three ideas for me: **intelligent model routing** (Day 1), the **conductor → orchestrator** shift to async multi-agent delegation (Day 1), and the **economics of AI development** — High CapEx / Low OpEx (Day 1). During the course week I applied all three by shipping a single feature into the harness:

@@ -183,6 +183,20 @@ no terminal needed after launching the console.** Highlights:
   static system prompt) and the `HANDOFF` decision that routed onward.
 * **Activity** — a live terminal-tail of every turn, tool call, and handoff.
 
+### Console screenshots
+
+The console is push-based (Server-Sent Events) — the feed, stepper, and budget
+meter update within a fraction of a second, with no polling. All shots below are
+from a real `math693a-limited-descent` run.
+
+| | |
+|:--|:--|
+| **Live run view** — budget meter, the five-stage checkpoint stepper, the *action-needed* card, and the streaming activity feed.<br>![Operator console overview](docs/screenshots/01_overview.png) | **Checkpoint decision + per-leg model picker** — Approve / Approve-with-changes / Re-run / Reject, plus a model dropdown per agent in the next leg (incl. the Opus-orchestrator option for `code_gen`/`test_gen`).<br>![Checkpoint decision and model picker](docs/screenshots/02_decision_model_picker.png) |
+| **Stage 1 · Idea selection** — the critic's ranked critiques, concerns, and kill-criteria.<br>![Idea selection checkpoint](docs/screenshots/03_idea_selection.png) | **Stage 3 · Preliminary review** — code-review findings, with the revision-loop-cap escalation.<br>![Preliminary review checkpoint](docs/screenshots/04_preliminary_review.png) |
+| **Stage 4 · Full results validation** — deterministic checks and flagged anomalies.<br>![Results validation checkpoint](docs/screenshots/10_results_validation.png) | **Stage 5 · Draft review** — peer-review recommendation, strengths, and weaknesses.<br>![Draft review checkpoint](docs/screenshots/05_draft_review.png) |
+| **Handoffs & Prompts** — each agent's activation, tool calls, and the exact inbound prompt it received.<br>![Handoffs and prompts](docs/screenshots/06_handoffs_prompts.png) | **Checkpoints history** — every gate the run opened, with its decision.<br>![Checkpoints history](docs/screenshots/07_checkpoints_history.png) |
+| **Agents** — the per-run roster with event counts and cost.<br>![Agent roster](docs/screenshots/08_agents.png) | **Start a new run** — project picker with the prefilled kickoff payload.<br>![Start a new run](docs/screenshots/09_new_run.png) |
+
 For a live agent run rather than smoke testing, see
 [Running a project end-to-end](#running-a-project-end-to-end) below.
 

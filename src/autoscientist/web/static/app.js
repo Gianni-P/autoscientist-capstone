@@ -60,7 +60,18 @@
     feed: { cursor: 0, atBottom: true, runId: null },
     openCpId: null,
     promptCache: {},
+    models: null,   // model catalog for the per-leg picker (lazy-loaded)
   };
+
+  // Selectable models / orchestrator info for the checkpoint model picker.
+  async function ensureModels() {
+    if (state.models) return state.models;
+    try { state.models = await api.get("/api/models"); }
+    catch (e) {
+      state.models = { models: [], agent_defaults: {}, orchestratable: [], orchestrator: { available: false } };
+    }
+    return state.models;
+  }
 
   // ---- toasts ----------------------------------------------------------
   function toast(msg, kind = "") {
@@ -489,6 +500,7 @@
     let cp;
     try { cp = await api.get(`/api/checkpoints/${cpId}`); }
     catch (e) { $("#modal-body").innerHTML = `<div class="banner banner-warn">Checkpoint not found.</div>`; return; }
+    await ensureModels();
     renderCheckpoint(cp);
   }
 
@@ -563,6 +575,7 @@
         <div class="choice" data-d="reject" aria-pressed="false">✕ Reject</div>
       </div>
       <div id="decision-detail"></div>
+      <div id="model-picker" class="model-picker"></div>
       <div class="form-actions">
         <button class="btn btn-primary" id="d-submit">Approve &amp; resume run</button>
         <span class="muted small" id="d-hint"></span>
@@ -577,6 +590,49 @@
     const detail = $("#decision-detail");
     const submit = $("#d-submit");
     const hint = $("#d-hint");
+
+    // ---- per-leg model picker -----------------------------------------
+    const cat = state.models || { models: [], agent_defaults: {}, orchestratable: [], orchestrator: { available: false } };
+    const modelSel = {};   // agent -> chosen alias ("" = use config default)
+
+    // Which agents a decision will actually run (so the picker is scoped to
+    // exactly the agents this approval drives): approve/modify → the next leg;
+    // rerun → the agent that produced this checkpoint; reject → none.
+    function agentsForDecision(d) {
+      if (d === "rerun") return fromA ? [fromA] : [];
+      if (d === "approve" || d === "modify") return cp.next_leg_agents || [];
+      return [];
+    }
+    function modelOptions(agent) {
+      const def = cat.agent_defaults[agent];
+      const defM = (cat.models.find((m) => m.alias === def) || {}).model_id || def || "config default";
+      let opts = `<option value="">default · ${esc(defM)}</option>`;
+      if ((cat.orchestratable || []).includes(agent) && cat.orchestrator && cat.orchestrator.available)
+        opts += `<option value="${esc(cat.orchestrator.value)}">${esc(cat.orchestrator.label)}</option>`;
+      cat.models.forEach((m) => {
+        opts += `<option value="${esc(m.alias)}">${esc(m.model_id)} · ${esc(m.tier)} · ${esc(m.price)}</option>`;
+      });
+      return opts;
+    }
+    function renderModelPicker(d) {
+      const host = $("#model-picker"); if (!host) return;
+      const agents = agentsForDecision(d);
+      if (!agents.length || !cat.models.length) { host.innerHTML = ""; return; }
+      const title = d === "rerun"
+        ? `Model for ${esc(fromA)} <span class="muted">(optional)</span>`
+        : `Models for this leg <span class="muted">(optional · resets after the next checkpoint)</span>`;
+      host.innerHTML =
+        `<div class="section-title">${title}</div>
+         <div class="model-rows">${agents.map((a) =>
+           `<div class="model-row">
+              <span class="model-agent">${esc(a)}</span>
+              <select class="model-select" data-agent="${esc(a)}">${modelOptions(a)}</select>
+            </div>`).join("")}</div>`;
+      $$("#model-picker .model-select").forEach((sel) => {
+        sel.value = modelSel[sel.dataset.agent] || "";
+        sel.onchange = () => { modelSel[sel.dataset.agent] = sel.value; };
+      });
+    }
 
     function renderDetail() {
       if (decision === "approve") {
@@ -622,6 +678,7 @@
         hint.textContent = "Stops the run here (cancelled). It will not resume.";
         submit.textContent = "Reject & stop run"; submit.className = "btn btn-danger";
       }
+      renderModelPicker(decision);
     }
 
     $$("#decision-choices .choice").forEach((c) => c.onclick = () => {
@@ -640,6 +697,13 @@
         : { decision: "modify", instructions: $("#d-instructions").value || null };
       else if (decision === "rerun") body = { decision: "rerun", instructions: $("#d-nudge").value || null };
       else body = { decision: "reject", instructions: $("#d-reason").value || null };
+
+      // Attach the operator's per-leg model picks (scoped to the agents this
+      // decision actually runs). Empty selections = keep the config default.
+      const relevant = new Set(agentsForDecision(decision));
+      const overrides = {};
+      Object.keys(modelSel).forEach((a) => { if (modelSel[a] && relevant.has(a)) overrides[a] = modelSel[a]; });
+      if (Object.keys(overrides).length) body.model_overrides = overrides;
 
       const { ok, data } = await api.post(`/api/checkpoints/${cp.checkpoint_id}/resolve`, body);
       submit.disabled = false;
@@ -661,6 +725,11 @@
     let html = `<div class="banner banner-info">Resolved as <b>${esc(cp.status)}</b>${cp.resolved_at ? " · " + fmtRel(cp.resolved_at) : ""} (decision: ${esc(op.decision || "?")}).</div>`;
     if (op.instructions) html += `<div class="section-title">Operator instructions</div><pre class="code">${esc(op.instructions)}</pre>`;
     if (op.modified_payload) html += block("Operator-overridden payload", `<pre class="code">${esc(op.modified_payload)}</pre>`);
+    if (op.model_overrides && Object.keys(op.model_overrides).length) {
+      const rows = Object.entries(op.model_overrides)
+        .map(([a, m]) => `<span class="model-chip"><b>${esc(a)}</b> → ${esc(m)}</span>`).join("");
+      html += `<div class="section-title">Model overrides (this leg)</div><div class="model-chips">${rows}</div>`;
+    }
     return html;
   }
 
@@ -920,6 +989,7 @@
     setupNav();
     syncTabs();
     $("#new-run-btn").onclick = openNewRunModal;
+    ensureModels();   // warm the model-picker catalog (non-blocking)
     await refreshOverview();
     if (SNAPSHOT) {
       const params = new URLSearchParams(location.search);

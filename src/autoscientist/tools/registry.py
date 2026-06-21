@@ -512,6 +512,27 @@ def _h_check_imports(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     )
 
 
+def _h_delegate(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    # Orchestrator-only: hand a file-level assignment to the local worker, which
+    # writes the file(s) and returns. This tool is only ever offered to an agent
+    # running in Opus-orchestrator mode (the runner adds it to the toolset there);
+    # the worker itself never has it, so there is no recursion.
+    from autoscientist.runtime import orchestration
+
+    assignment = str(inp.get("assignment", "")).strip()
+    if not assignment:
+        raise ValueError("delegate requires a non-empty 'assignment' string")
+    files = inp.get("files")
+    if files is not None and not isinstance(files, list):
+        files = [str(files)]
+    return orchestration.delegate_assignment(
+        ctx,
+        assignment=assignment,
+        context=(str(inp["context"]) if inp.get("context") else None),
+        files=[str(f) for f in files] if files else None,
+    )
+
+
 def _h_handoff(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     # The runner (runtime/runner._invoke_agent) intercepts `handoff` tool calls
     # to validate `target` against the agent's allowed handoff targets and
@@ -847,6 +868,44 @@ def _register_defaults() -> None:
             "required": ["target"],
         },
         handler=_h_handoff,
+    ))
+
+    register(ToolSpec(
+        name="delegate",
+        description=(
+            "Orchestrator only: hand a focused, file-level assignment to a fast "
+            "local worker that writes the file(s) directly into the sandbox, then "
+            "returns. Use this to delegate the BULK of code/test writing instead "
+            "of emitting files yourself. Put the EXACT contract in 'assignment' — "
+            "the public names, signatures, behaviour, and which existing modules "
+            "to match — because the worker sees only that text. The result is a "
+            "compact summary (worker note + sandbox listing + a fresh "
+            "check_imports); read it, then read_sandbox_file any file with real "
+            "logic and verify the math/indexing yourself before relying on it."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "assignment": {
+                    "type": "string",
+                    "description": (
+                        "Precise instruction for the worker: which file(s) to write "
+                        "and the exact API/behaviour they must implement."
+                    ),
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: the sandbox-relative path(s) being written.",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Optional extra constraints (e.g. APIs in sibling files to match).",
+                },
+            },
+            "required": ["assignment"],
+        },
+        handler=_h_delegate,
     ))
 
 

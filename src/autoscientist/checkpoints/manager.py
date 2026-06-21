@@ -42,6 +42,19 @@ CHECKPOINT_POLICY: dict[str, tuple[int, str]] = {
     "peer_reviewer":     (5, "draft_review"),
 }
 
+# Forward pipeline order. Used to compute the "leg" a single approval advances
+# (see :func:`next_leg_agents`) so the console can scope its per-agent model
+# picker to exactly the agents that approval will run.
+PIPELINE_ORDER: tuple[str, ...] = (
+    "lit_review", "idea_gen", "idea_critic", "methodology",
+    "code_gen", "test_gen", "code_review",
+    "results_validator", "paper_writer", "peer_reviewer", "repo_publisher",
+)
+
+# Agents that support Opus-orchestrator mode (mirrors orchestration.ORCHESTRATABLE;
+# duplicated here to keep manager free of a runtime import).
+ORCHESTRATABLE_AGENTS: tuple[str, ...] = ("code_gen", "test_gen")
+
 STAGE_NAMES: dict[int, str] = {
     1: "idea_selection",
     2: "methodology_approval",
@@ -160,6 +173,28 @@ def stage_for_agent(
     return info
 
 
+def next_leg_agents(to_agent: str | None) -> list[str]:
+    """Agents that will run from ``to_agent`` up to (and including) the agent
+    that opens the next checkpoint — the 'leg' a single approval advances.
+
+    The console offers a per-agent model picker scoped to this list, so the
+    operator overrides exactly the agents their approval will run. Returns
+    ``[]`` for a terminal/empty target; an unknown agent yields just itself.
+    """
+    if not to_agent or to_agent == "DONE":
+        return []
+    try:
+        i = PIPELINE_ORDER.index(to_agent)
+    except ValueError:
+        return [to_agent]
+    leg: list[str] = []
+    for a in PIPELINE_ORDER[i:]:
+        leg.append(a)
+        if a in CHECKPOINT_POLICY:  # this agent opens the next checkpoint → leg ends
+            break
+    return leg
+
+
 def open_checkpoint(
     conn: sqlite3.Connection,
     *,
@@ -257,8 +292,13 @@ def resolve(
     decision: str,
     instructions: str | None = None,
     modified_payload: str | None = None,
+    model_overrides: dict[str, str] | None = None,
 ) -> CheckpointRecord:
     """Resolve a pending checkpoint with an operator decision.
+
+    ``model_overrides`` ({agent_name: model_alias}) records the operator's
+    per-leg model picks; ``resume_run`` reads them back from ``operator_input``
+    and applies them to the agents that run before the next checkpoint.
 
     Q&A is *not* a resolution — use :func:`add_question` for that.
     Returns the updated record.
@@ -270,6 +310,10 @@ def resolve(
         op_input["instructions"] = instructions
     if modified_payload is not None and modified_payload != "":
         op_input["modified_payload"] = modified_payload
+    if model_overrides:
+        clean = {str(k): str(v) for k, v in model_overrides.items() if v}
+        if clean:
+            op_input["model_overrides"] = clean
 
     cur = conn.execute(
         "UPDATE checkpoints SET status = ?, operator_input = ?, resolved_at = ? "

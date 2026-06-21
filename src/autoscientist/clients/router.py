@@ -127,6 +127,7 @@ def route(
     tools_signature: str | None = None,
     cfg: Config | None = None,
     project_id: str | None = None,
+    model_override: str | None = None,
 ) -> CompletionResult:
     """Dispatch a single LLM call. Provider-aware tool plumbing.
 
@@ -134,10 +135,28 @@ def route(
     (callers use ``tools/registry.py`` to build them). The router picks the
     one matching the resolved provider; both are accepted so callers don't
     have to know the provider.
+
+    ``model_override`` is an operator-selected model *alias* (from
+    ``config/models.toml [models]``) that replaces the agent's configured model
+    for this call only — the mechanism behind the console's per-leg model
+    picker. An unknown alias is ignored (logged) and the configured model is
+    used, so a stale/bad override can never crash a detached resume.
     """
     cfg = cfg or load_config()
     agent = resolve_agent(cfg, agent_name)
     model = agent.model
+    if model_override and model_override != model.alias:
+        try:
+            model = _resolve_model(cfg, model_override)
+            log.info(
+                "router.model_override",
+                agent=agent_name, override=model_override, model=model.model_id,
+            )
+        except UnknownModel:
+            log.warning(
+                "router.model_override_unknown",
+                agent=agent_name, override=model_override, using=model.model_id,
+            )
     if max_tokens is None:
         max_tokens = model.default_max_tokens
     # Some models (e.g. claude-opus-4-7) reject the `temperature` parameter.

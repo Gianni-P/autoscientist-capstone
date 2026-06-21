@@ -164,6 +164,11 @@ def api_projects(_: Request) -> JSONResponse:
     return _json({"projects": queries.list_projects(), "default_agent": _DEFAULT_START_AGENT})
 
 
+def api_models(_: Request) -> JSONResponse:
+    """Selectable models + per-agent defaults + orchestrator info for the picker."""
+    return _json(queries.models_catalog())
+
+
 def api_project_payload(request: Request) -> JSONResponse:
     payload = queries.project_payload(request.path_params["name"])
     if payload is None:
@@ -181,7 +186,8 @@ def api_run_checkpoints(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 def _resolve_blocking(cp_id: str, decision: str, instructions: str | None,
-                      modified_payload: str | None) -> dict[str, Any]:
+                      modified_payload: str | None,
+                      model_overrides: dict[str, str] | None = None) -> dict[str, Any]:
     with closing(queries.connect()) as conn:
         cp = cp_manager.get_checkpoint(conn, cp_id)
         if cp is None:
@@ -193,6 +199,7 @@ def _resolve_blocking(cp_id: str, decision: str, instructions: str | None,
                 decision=decision,
                 instructions=instructions or None,
                 modified_payload=modified_payload or None,
+                model_overrides=model_overrides or None,
             )
             conn.commit()
         except (ValueError, RuntimeError) as e:
@@ -213,12 +220,16 @@ async def api_resolve(request: Request) -> JSONResponse:
     decision = (body or {}).get("decision")
     if decision not in cp_manager._VALID_DECISIONS:
         return _json({"ok": False, "error": "invalid decision"}, 400)
+    overrides, err = queries.validate_model_overrides((body or {}).get("model_overrides"))
+    if err is not None:
+        return _json({"ok": False, "error": err}, 400)
     result = await run_in_threadpool(
         _resolve_blocking,
         cp_id,
         decision,
         (body or {}).get("instructions"),
         (body or {}).get("modified_payload"),
+        overrides,
     )
     return _json(result, result.pop("status", 200) if not result.get("ok") else 200)
 
@@ -355,6 +366,7 @@ routes = [
     Route("/api/overview", api_overview),
     Route("/api/projects", api_projects),
     Route("/api/projects/{name}/payload", api_project_payload),
+    Route("/api/models", api_models),
     # Literal /api/runs/start must precede the /api/runs/{run_id} pattern.
     Route("/api/runs/start", api_start_run, methods=["POST"]),
     Route("/api/runs", api_runs),

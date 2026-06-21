@@ -261,6 +261,21 @@ cost_ceiling_usd = 5.00  # raised 2->5 for Opus
 max_tool_rounds = 15
 invocation_ceiling_usd = 8.00  # raised 3->8 for Opus (cumulative across the round loop)
 
+[agents.code_worker]
+# Orchestrator worker (2026-06-19). NOT in the normal pipeline — it is invoked
+# ONLY by the `delegate` tool when code_gen/test_gen run in "Opus orchestrator"
+# mode (operator-selected per leg in the console). Opus 4.8 decomposes the task
+# and hands each file-level assignment here; this local worker writes the files
+# directly to the sandbox and returns a compact summary. Local => $0, so the
+# bulk code-emission cost stays off the cloud bill while Opus only plans and
+# spot-checks. Dense qwen2.5-32b for cleaner numerical reasoning (operator pick).
+# Toolset is write-only (no execute / no handoff / no delegate) so the worker
+# can't debug-spin or recurse. Repoint `model` to retarget the worker.
+model = "qwen25_32b"
+cost_ceiling_usd = 0.50
+max_tool_rounds = 14
+invocation_ceiling_usd = 1.00
+
 [agents.code_review]
 model = "claude_sonnet"
 cost_ceiling_usd = 1.00
@@ -333,3 +348,15 @@ hard_floor_buffer_usd = 5.0
 # individually-cheap calls that summed to $16+. Per-agent overrides below.
 # 0 disables it. The monthly hard cap above is always the final gate.
 default_invocation_ceiling_usd = 10.0
+
+#
+# Orchestrator mode (2026-06-19).
+# When the operator picks "Opus orchestrator" for code_gen/test_gen at an
+# approval gate, the runner routes that agent to `manager_model` (Opus 4.8),
+# adds the `delegate` tool, and appends orchestrator instructions to its prompt.
+# Opus plans + spot-checks; each delegate call runs `worker_agent` (a local
+# model) which writes the files. Retarget either tier here without code changes.
+#
+[orchestrator]
+manager_model = "claude_opus_48"  # the planner/reviewer (cloud, strong)
+worker_agent = "code_worker"      # the file-writer (see [agents.code_worker]; local, $0)

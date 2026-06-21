@@ -36,6 +36,9 @@ AGENT_NAMES: tuple[str, ...] = (
     "paper_writer",
     "peer_reviewer",
     "repo_publisher",
+    # Not part of the handoff pipeline — invoked only by the `delegate` tool in
+    # Opus-orchestrator mode (see agents/code_worker.py, runtime/orchestration.py).
+    "code_worker",
 )
 
 

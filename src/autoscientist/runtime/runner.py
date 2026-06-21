@@ -47,6 +47,12 @@ from autoscientist.runtime import control as run_control
 from autoscientist.runtime.agent import Agent, load_prompt
 from autoscientist.runtime.config import Config, load_config
 from autoscientist.runtime.handoff import DONE, Handoff, parse_handoff
+from autoscientist.runtime.orchestration import (
+    ORCH_OVERRIDE,
+    ORCHESTRATABLE,
+    ORCHESTRATOR_APPENDIX,
+    orchestrator_manager_model,
+)
 from autoscientist.runtime.payload_files import (
     build_code_review_payload_from_sandbox,
     build_paper_writer_payload_from_sandbox,
@@ -457,11 +463,16 @@ def _invoke_agent(
     log,
     project_id: str,
     max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+    model_override: str | None = None,
 ):
     """Run one agent invocation including its tool-use loop.
 
     Returns the final assistant ``CompletionResult`` (the one with no tool
     calls; its ``content`` carries any ``HANDOFF: <target>`` directive).
+
+    ``model_override`` (an operator-selected model alias) is forwarded to every
+    ``route`` call so the whole invocation runs on the chosen model. ``None``
+    uses the agent's configured model.
 
     Records: one ``user`` message, then for each loop round one ``assistant``
     message and (if there were tool calls) one ``tool`` message per call.
@@ -530,6 +541,7 @@ def _invoke_agent(
             tools_signature=tools_sig,
             cfg=cfg,
             project_id=project_id,
+            model_override=model_override,
         )
         latency_ms = int((time.monotonic() - started) * 1000)
         last_result = result
@@ -736,6 +748,7 @@ def _invoke_agent(
             tools_signature=None,
             cfg=cfg,
             project_id=project_id,
+            model_override=model_override,
         )
         record_message(
             conn, run_id=run_id, agent_name=agent.name,
@@ -859,6 +872,7 @@ def _drive_loop(
     max_handoffs: int,
     max_tool_rounds: int,
     enable_checkpoints: bool,
+    model_overrides: dict[str, str] | None = None,
     handoffs_so_far: int = 0,
     code_review_cycles_so_far: int = 0,
 ) -> tuple[str, str | None, int]:
@@ -880,6 +894,10 @@ def _drive_loop(
     handoffs = handoffs_so_far
     final_status = "completed"
     note: str | None = None
+    # Operator-selected per-leg model overrides ({agent_name: model_alias}, or
+    # the ORCH_OVERRIDE sentinel). Lives only for this _drive_loop pass — the
+    # next checkpoint approval supplies a fresh map (see resume_run).
+    model_overrides = model_overrides or {}
 
     # Cap on consecutive code_review firings in this _drive_loop pass. A
     # CHECKPOINT resume passes 0 (operator approval at CP3 intentionally resets
@@ -903,6 +921,29 @@ def _drive_loop(
                 prompt,
                 system_text=inject_project_context(prompt.system_text, _projects_root, project_id),
             )
+
+            # Per-leg model override (operator-selected at the approval gate;
+            # applies only to this _drive_loop pass). A plain alias swaps the
+            # model for this agent; the ORCH_OVERRIDE sentinel on an
+            # orchestratable agent (code_gen/test_gen) switches it to
+            # Opus-orchestrator mode — route to the manager model, add the
+            # `delegate` tool, and append the orchestrator playbook to the prompt.
+            override_alias = model_overrides.get(current_agent_name)
+            route_override: str | None = None
+            if override_alias == ORCH_OVERRIDE and current_agent_name in ORCHESTRATABLE:
+                route_override = orchestrator_manager_model(cfg)
+                agent = replace(
+                    agent, tools=tuple(dict.fromkeys((*agent.tools, "delegate")))
+                )
+                prompt = replace(prompt, system_text=prompt.system_text + ORCHESTRATOR_APPENDIX)
+                log.info(
+                    "run.orchestrator_mode",
+                    agent=current_agent_name, manager_model=route_override,
+                )
+            elif override_alias and override_alias != ORCH_OVERRIDE:
+                route_override = override_alias
+                log.info("run.model_override", agent=current_agent_name, model=route_override)
+
             inbound_text = current_payload or "(no payload)"
 
             # code_review has no file-reading tool, so a handoff payload with
@@ -1007,6 +1048,7 @@ def _drive_loop(
                 log=log,
                 project_id=project_id,
                 max_tool_rounds=_agent_max_tool_rounds(cfg, current_agent_name, max_tool_rounds),
+                model_override=route_override,
             )
 
             if current_agent_name == "code_review":
@@ -1253,6 +1295,7 @@ def run(
     max_handoffs: int = 50,
     max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     enable_checkpoints: bool = True,
+    model_overrides: dict[str, str] | None = None,
     cfg: Config | None = None,
 ) -> str:
     """Drive the agent run loop from a fresh start. Returns the run_id.
@@ -1301,6 +1344,7 @@ def run(
             max_handoffs=max_handoffs,
             max_tool_rounds=max_tool_rounds,
             enable_checkpoints=enable_checkpoints,
+            model_overrides=model_overrides,
         )
 
         end_run(conn, run_id, final_status, note)
@@ -1340,6 +1384,16 @@ def _apply_nudge(inbound: str | None, nudge: str | None) -> str:
     base = _NUDGE_RE.sub("", inbound or "")
     nudge = (nudge or "").strip()
     return f"{base}\n\nOPERATOR_NUDGE: {nudge}" if nudge else base
+
+
+def _model_overrides_from_op(op: dict | None) -> dict[str, str]:
+    """Pull the operator's per-leg model overrides out of a checkpoint's
+    ``operator_input``. Tolerant: non-dict / empty values are dropped so a
+    malformed payload never breaks the resume."""
+    mo = (op or {}).get("model_overrides")
+    if not isinstance(mo, dict):
+        return {}
+    return {str(k): str(v) for k, v in mo.items() if v}
 
 
 def resume_run(
@@ -1488,6 +1542,7 @@ def resume_run(
                 max_handoffs=max_handoffs,
                 max_tool_rounds=max_tool_rounds,
                 enable_checkpoints=True,
+                model_overrides=_model_overrides_from_op(op),
             )
             end_run(conn, run_id, final_status, note)
             conn.commit()
@@ -1563,6 +1618,7 @@ def resume_run(
             max_handoffs=max_handoffs,
             max_tool_rounds=max_tool_rounds,
             enable_checkpoints=True,
+            model_overrides=_model_overrides_from_op(cp.operator_input),
         )
 
         end_run(conn, run_id, final_status, note)

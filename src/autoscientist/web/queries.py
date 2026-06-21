@@ -26,6 +26,7 @@ from autoscientist.checkpoints import manager as cp_manager
 from autoscientist.runtime import control as run_control
 from autoscientist.runtime.budget import BudgetConfig, monthly_spent
 from autoscientist.runtime.config import load_config
+from autoscientist.runtime.orchestration import ORCH_OVERRIDE
 from autoscientist.state.db import month_key, open_db
 
 # A generous server-side cap on a single content blob shipped in a list
@@ -475,6 +476,9 @@ def checkpoint_detail(conn: sqlite3.Connection, cp_id: str) -> dict[str, Any] | 
         "summary": cp.payload.get("summary"),
         "extra": cp.extra,
         "operator_input": cp.operator_input,
+        # Agents this approval will run before the next gate (approve/modify),
+        # so the console can scope its per-agent model picker to them.
+        "next_leg_agents": cp_manager.next_leg_agents(cp.to_agent or None),
         "questions": questions,
     }
 
@@ -594,6 +598,98 @@ def project_exists(project_id: str) -> bool:
     pdir = _projects_dir()
     d = (pdir / project_id).resolve()
     return d.parent == pdir and (d / "config.toml").exists()
+
+
+# ---------------------------------------------------------------------------
+# Model catalog (per-leg model picker in the console)
+# ---------------------------------------------------------------------------
+
+def _price_str(m: dict[str, Any]) -> str:
+    p = float(m.get("prompt_usd_per_mtok", 0.0))
+    o = float(m.get("output_usd_per_mtok", 0.0))
+    if p == 0.0 and o == 0.0:
+        return "free"
+    return f"${p:g}/${o:g} per Mtok"
+
+
+def models_catalog() -> dict[str, Any]:
+    """Selectable models + per-agent config defaults + orchestrator info.
+
+    Drives the console's per-leg model picker. The ``mock`` provider is hidden
+    (test-only). ``agent_defaults`` lets the UI show "default (<model>)" so the
+    operator sees what they'd get without overriding.
+    """
+    cfg = load_config()
+    models = cfg.models.get("models", {})
+    agents = cfg.models.get("agents", {})
+    orch = cfg.models.get("orchestrator", {})
+
+    catalog: list[dict[str, Any]] = []
+    for alias, m in models.items():
+        provider = m.get("provider")
+        if provider == "mock":
+            continue
+        tier = "local" if provider == "ollama" else ("cloud" if provider == "claude" else provider)
+        catalog.append({
+            "alias": alias,
+            "model_id": m.get("model_id", alias),
+            "provider": provider,
+            "tier": tier,
+            "price": _price_str(m),
+        })
+
+    agent_defaults = {name: a.get("model") for name, a in agents.items()}
+
+    manager_alias = orch.get("manager_model", "claude_opus_48")
+    worker_agent = orch.get("worker_agent", "code_worker")
+    worker_alias = agents.get(worker_agent, {}).get("model")
+    worker_mid = models.get(worker_alias, {}).get("model_id", "local worker")
+    manager_mid = models.get(manager_alias, {}).get("model_id", manager_alias)
+    orchestrator = {
+        "available": manager_alias in models and worker_alias in models,
+        "value": ORCH_OVERRIDE,
+        "label": f"🧠 {manager_mid} orchestrator → {worker_mid} worker",
+        "manager_model_id": manager_mid,
+        "worker_model_id": worker_mid,
+    }
+
+    return {
+        "models": catalog,
+        "agent_defaults": agent_defaults,
+        "orchestratable": list(cp_manager.ORCHESTRATABLE_AGENTS),
+        "orchestrator": orchestrator,
+    }
+
+
+def validate_model_overrides(overrides: Any) -> tuple[dict[str, str], str | None]:
+    """Validate an operator-supplied ``{agent: model_alias}`` map.
+
+    Returns ``(clean, error)``. ``error`` is non-None on the first invalid
+    entry (unknown agent, unknown alias, or orchestrator mode requested for a
+    non-orchestratable agent); ``clean`` is then empty.
+    """
+    if not overrides:
+        return {}, None
+    if not isinstance(overrides, dict):
+        return {}, "model_overrides must be an object of {agent: model}"
+    cfg = load_config()
+    valid_aliases = set(cfg.models.get("models", {}).keys())
+    known_agents = set(cfg.models.get("agents", {}).keys()) | set(cp_manager.PIPELINE_ORDER)
+    orchestratable = set(cp_manager.ORCHESTRATABLE_AGENTS)
+    clean: dict[str, str] = {}
+    for agent_name, alias in overrides.items():
+        if not alias:
+            continue  # empty = "use default"
+        agent_name, alias = str(agent_name), str(alias)
+        if agent_name not in known_agents:
+            return {}, f"unknown agent: {agent_name}"
+        if alias == ORCH_OVERRIDE:
+            if agent_name not in orchestratable:
+                return {}, f"orchestrator mode is only available for {sorted(orchestratable)}"
+        elif alias not in valid_aliases:
+            return {}, f"unknown model alias: {alias}"
+        clean[agent_name] = alias
+    return clean, None
 
 
 # ---------------------------------------------------------------------------

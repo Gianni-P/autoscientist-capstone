@@ -1,0 +1,20 @@
+# Derived from qwen3.6:27b with an enlarged context-window request.
+#
+# 2026-06-22: the local file-writer for the Opus-orchestrator's code_worker. The
+# official qwen3.6:27b (dense 27.8B, arch qwen35, Q4_K_M) was RE-VALIDATED as a
+# clean tool-caller in THINKING mode — both a trivial multiply smoke and a harder
+# write_file x4 -> check_imports -> handoff sequence at a 64k budget ran with ZERO
+# oscillation (Ollama's _detect_reasoning_loop never fired; bounded, non-looping
+# reasoning). This supersedes the older "qwen3.6 ruled out for planning-
+# oscillation" verdict, which was against an earlier build forced under /no_think.
+#
+# CONTEXT/VRAM: measured on the 32GB RTX 5090 — at num_ctx 65536 it loads at 21GB,
+# 100% GPU, CONTEXT 65536 (verified via `ollama ps`; NOT auto-fit down — qwen3.6's
+# GQA gives a small ~4GB KV cache at 64k). 64k is far more than code_worker needs
+# (one file-level assignment per delegate call), with headroom to ~128k if wanted;
+# 256k would exceed the 32GB VRAM.
+#
+# Build:   ollama create qwen3.6-27b-64k -f config/qwen3.6-27b-64k.Modelfile
+# Revert:  repoint [agents.code_worker] to "qwen25_32b" in config/models.toml.
+FROM qwen3.6:27b
+PARAMETER num_ctx 65536

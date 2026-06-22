@@ -52,7 +52,7 @@ def _conn_run(tmp_path):
 
 
 def test_route_uses_model_override(tmp_path, monkeypatch):
-    """code_worker is local (qwen25_32b); overriding to claude_haiku must
+    """code_worker is local (qwen36_27b); overriding to claude_haiku must
     dispatch to the Claude client with Haiku's model id, not Ollama."""
     captured: dict[str, str] = {}
     _stub_providers(monkeypatch, captured)
@@ -81,9 +81,9 @@ def test_route_unknown_override_falls_back(tmp_path, monkeypatch):
         run_id=run_id, model_override="does_not_exist", cfg=cfg,
     )
     conn.close()
-    assert captured.get("ollama_model") == "qwen2.5-32b-64k"  # config default
+    assert captured.get("ollama_model") == "qwen3.6-27b-64k"  # config default
     assert "claude_model" not in captured
-    assert res.model == "qwen2.5-32b-64k"
+    assert res.model == "qwen3.6-27b-64k"
 
 
 def test_resolve_persists_model_overrides(tmp_path):

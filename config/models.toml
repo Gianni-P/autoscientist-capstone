@@ -173,6 +173,25 @@ output_usd_per_mtok = 0.0
 default_max_tokens = 16384
 no_think = true  # qwen2.5 is not a thinking model; flag is a harmless no-op
 
+[models.qwen36_27b]
+# 2026-06-22: official qwen3.6:27b (dense 27.8B, arch qwen35) as the
+# Opus-orchestrator's local code_worker, run in THINKING mode. Re-validated as a
+# clean tool-caller with NO oscillation on a realistic write_file -> check_imports
+# -> handoff sequence at a 64k budget — superseding the old "qwen3.6 ruled out for
+# planning-oscillation" verdict, which was an earlier build forced under /no_think.
+# model_id is the 64k-context variant (config/qwen3.6-27b-64k.Modelfile,
+# `ollama create qwen3.6-27b-64k -f ...`); measured 21GB / 100% GPU / 64k ctx on
+# the 32GB RTX 5090. no_think=false: thinking helps it plan the file breakdown and
+# is concise/non-looping here; clients/ollama.py's _detect_reasoning_loop remains
+# the safety net if it ever oscillates. Revert: repoint [agents.code_worker] to
+# "qwen25_32b".
+provider = "ollama"
+model_id = "qwen3.6-27b-64k"
+prompt_usd_per_mtok = 0.0
+output_usd_per_mtok = 0.0
+default_max_tokens = 16384
+no_think = false  # thinking model; validated clean tool-calling in thinking mode
+
 [models.mock_stub]
 # Used by Phase 1 stub agents (echo, handoff). No network, deterministic.
 provider = "mock"
@@ -268,10 +287,13 @@ invocation_ceiling_usd = 8.00  # raised 3->8 for Opus (cumulative across the rou
 # and hands each file-level assignment here; this local worker writes the files
 # directly to the sandbox and returns a compact summary. Local => $0, so the
 # bulk code-emission cost stays off the cloud bill while Opus only plans and
-# spot-checks. Dense qwen2.5-32b for cleaner numerical reasoning (operator pick).
+# spot-checks. 2026-06-22: worker model = qwen3.6:27b (dense 27.8B, THINKING
+# mode) via the qwen36_27b alias — re-validated as a clean tool-caller with NO
+# oscillation on a realistic file-writing sequence at 64k, and stronger than the
+# prior qwen2.5-32b worker (which sprayed files / skipped check_imports).
 # Toolset is write-only (no execute / no handoff / no delegate) so the worker
-# can't debug-spin or recurse. Repoint `model` to retarget the worker.
-model = "qwen25_32b"
+# can't debug-spin or recurse. Revert: repoint `model` to "qwen25_32b".
+model = "qwen36_27b"
 cost_ceiling_usd = 0.50
 max_tool_rounds = 14
 invocation_ceiling_usd = 1.00

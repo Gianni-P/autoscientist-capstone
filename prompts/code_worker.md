@@ -1,5 +1,5 @@
 ---
-model: qwen25_32b
+model: qwen36_27b
 temperature: 0.2
 max_tokens: 16384
 expected_output: "write_file calls for the assigned file(s), a check_imports call, then a short plain-text summary (no handoff)."

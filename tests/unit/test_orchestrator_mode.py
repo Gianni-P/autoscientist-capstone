@@ -120,7 +120,7 @@ def test_delegate_runs_worker_and_summarizes(tmp_path, monkeypatch):
             args = {"path": "src/foo.py", "content": "X = 1\n"}
             tc = ToolCall(id="w1", name="write_file", input=args)
             return CompletionResult(
-                content="", model="qwen2.5-32b-64k", provider="ollama",
+                content="", model="qwen3.6-27b-64k", provider="ollama",
                 prompt_tokens=5, completion_tokens=5, finish_reason="tool_calls",
                 tool_calls=[tc],
                 raw_content_blocks={
@@ -131,7 +131,7 @@ def test_delegate_runs_worker_and_summarizes(tmp_path, monkeypatch):
                 },
             )
         return CompletionResult(
-            content="Wrote src/foo.py defining X.", model="qwen2.5-32b-64k",
+            content="Wrote src/foo.py defining X.", model="qwen3.6-27b-64k",
             provider="ollama", prompt_tokens=5, completion_tokens=5,
             finish_reason="stop", tool_calls=[],
         )
@@ -157,7 +157,7 @@ def test_delegate_runs_worker_and_summarizes(tmp_path, monkeypatch):
     )
     conn.close()
 
-    assert out["worker_model"] == "qwen2.5-32b-64k"
+    assert out["worker_model"] == "qwen3.6-27b-64k"
     assert "src/foo.py" in out["files_in_sandbox"]
     assert out["check_imports"]["ok"] is True
     assert "verify it yourself" in out["note"]

@@ -53,7 +53,7 @@ The pipeline is deterministic code (`runtime/runner.py`): it invokes an agent, r
 
 ## The operator console
 
-The console is where the human-in-the-loop actually happens, and it is the most visible part of the system. A push-based web app (Starlette + Server-Sent Events) renders every run live — a five-stage checkpoint stepper, the streaming activity feed, per-agent handoffs with the exact prompt each agent received, a budget meter, and the agent roster — with no polling. At each of the five gates the operator can **approve, approve-with-changes, re-run with a nudge, or reject**; and — the course-week addition (below) — **pick the model for each agent in the next leg**, including the Opus-orchestrator option for `code_gen`/`test_gen`. This is the security/HITL concept made tangible: the place where a human supplies the judgment the agents lack, and where model routing becomes a per-decision choice rather than a config edit. Ten annotated screenshots are in `docs/screenshots/` (and the project README).
+The console is where the human-in-the-loop actually happens, and it is the most visible part of the system. A push-based web app (Starlette + Server-Sent Events) renders every run live — a five-stage checkpoint stepper, the streaming activity feed, per-agent handoffs with the exact prompt each agent received, a budget meter, and the agent roster — with no polling. At each of the five gates the operator can **approve, approve-with-changes, re-run with a nudge, or reject**; and — the course-week addition (below) — **pick the model for each agent in the next leg**, including the Opus-orchestrator option for `code_gen`/`test_gen`/`figure_gen`. This is the security/HITL concept made tangible: the place where a human supplies the judgment the agents lack, and where model routing becomes a per-decision choice rather than a config edit. Ten annotated screenshots are in `docs/screenshots/` (and the project README).
 
 ## What the course changed — the increment I built during the course week
 
@@ -105,7 +105,7 @@ The code is heavily commented at the level of *why* — most non-obvious guards 
 
 ## Verification & evaluation
 
-The course splits trust into two axes — **security** (did the agent stay in bounds?) and **evaluation** (is the result worth shipping?) — and autoscientist implements both. Beyond an LM-judge agent scored against per-agent rubrics (`meta/eval_rubrics.py`) and prompt versioning / A-B harness, a dedicated `verify/` package runs **deterministic** gates the model cannot argue with: data-leakage detection, baseline-reproduction tolerance checks, statistical-validity checks, and domain-specific pitfall handlers. A `test_gen` agent writes AI-generated test coverage *targeting the methodology's pitfalls* before code is accepted — programmatic confidence wired in as a gate, not an afterthought. The project ships **343 passing unit tests**.
+The course splits trust into two axes — **security** (did the agent stay in bounds?) and **evaluation** (is the result worth shipping?) — and autoscientist implements both. Beyond an LM-judge agent scored against per-agent rubrics (`meta/eval_rubrics.py`) and prompt versioning / A-B harness, a dedicated `verify/` package runs **deterministic** gates the model cannot argue with: data-leakage detection, baseline-reproduction tolerance checks, statistical-validity checks, and domain-specific pitfall handlers. A `test_gen` agent writes AI-generated test coverage *targeting the methodology's pitfalls* before code is accepted — programmatic confidence wired in as a gate, not an afterthought. The project ships **363 passing unit tests**.
 
 ## Result: a real end-to-end deliverable
 
@@ -120,7 +120,7 @@ The flagship run reworked an undergraduate study, *"Limited Descent: The Use of 
 ## Reproduce & links
 
 - **Code:** the public repository, with full setup in `README.md`, including a one-line **GPU-free** configuration (route the code agents to a hosted model).
-- **Quick verification with no spend and no GPU:** the phase smoke tests run the whole substrate against a deterministic mock provider; `pytest` runs all 343 unit tests.
+- **Quick verification with no spend and no GPU:** the phase smoke tests run the whole substrate against a deterministic mock provider; `pytest` runs all 363 unit tests.
 - **Concept mapping:** `WRITEUP.md` (this document) and the README's "Course concepts demonstrated" table point at the exact files.
 
 autoscientist is the disciplined end of the vibe-coding spectrum: a system whose primary output is not code, but the harness that produces trustworthy science.

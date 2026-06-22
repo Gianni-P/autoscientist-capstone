@@ -2,9 +2,8 @@
 
 A **fast** autoscientist test project: tabular clinical-risk prediction with
 scikit-learn. Designed so the autonomous chain can run end-to-end in minutes,
-not hours, and finally exercise checkpoints 3–5 (preliminary results, full
-results validation, draft review) — which no prior run has reached
-(see `../../ASSESSMENT_2026-05-29.md`).
+not hours, and exercise checkpoints 3–5 (preliminary results, full
+results validation, draft review) on a cheap, fast-compute project.
 
 ## Research question
 
@@ -63,7 +62,7 @@ the full pre-flight, pause/resume, and spend-monitoring details):
 
 ```bash
 # Terminal A — the runner
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 set -a; source .env; set +a
 PAYLOAD=$(cat projects/clinical-risk-tabular/kickoff_payload.json)
 uv run python -m autoscientist.runtime.runner \
@@ -82,10 +81,12 @@ arrive this time.
 
 ## Recommended before a long unattended run
 
-- Apply the **per-invocation cost cap for `test_gen`** (ASSESSMENT R2). The
-  `$20` project soft cap here is only a backstop; the historical runaway burned
-  ~$16 in a single `test_gen` invocation.
-- Consider the **thin CP3→CP4→CP5 slice** (ASSESSMENT R3): feed
-  `results_validator` a small canned results payload to prove the back half of
-  the pipeline — none of `results_validator` / `paper_writer` / `peer_reviewer`
-  / `repo_publisher` has ever run on a real project.
+- Apply the **per-invocation cost cap for `test_gen`**. The `$20` project soft
+  cap here is only a backstop; a historical runaway burned ~$16 in a single
+  `test_gen` invocation.
+- The full back half of the pipeline (`results_validator` → `figure_gen` →
+  `paper_writer` → `peer_reviewer` → `repo_publisher`) has since run end-to-end
+  on the `math693a-limited-descent` project (which ships 4 result figures + a
+  figure-bearing `paper.pdf` in `release/`). To exercise it cheaply here first,
+  feed `results_validator` a small canned results payload as a thin
+  CP3→CP4→CP5 slice.

@@ -296,7 +296,7 @@ uv run python scripts/_budget_status_v2.py
 # per-agent (real $ only):
 #   test_gen   $XX.XXXX  (NNN calls)
 #   ...
-# current month (YYYY-MM) spend: $X.XXXX / $150 cap
+# current month (YYYY-MM) spend: $X.XXXX / $200 cap
 ```
 
 The runtime refuses new API calls within $5 of the monthly cap. That
@@ -340,7 +340,7 @@ This pipeline has no real medical/clinical knowledge baked in. The pitfall check
 
 ## Budget
 
-The pipeline tracks every API call against a monthly cap (default $150) and refuses new calls within $5 of the cap. Budget enforcement is non-negotiable and lives in `src/autoscientist/runtime/budget.py`.
+The pipeline tracks every API call against a monthly cap (default $200) and refuses new calls within $5 of the cap. Budget enforcement is non-negotiable and lives in `src/autoscientist/runtime/budget.py`.
 
 ## Layout
 
@@ -377,6 +377,6 @@ reproducible code repo.
   pre-flight, the zero-spend domain smoke
   (`scripts/smoke_numerical_optimization.py`), and the launch command. The
   `code_gen`/`test_gen` loop routes to local `qwen2.5:32b` via Ollama (≈ $0),
-  with a `$12` project soft cap as the backstop. At any approval gate you can
+  with a `$190` project soft cap as the backstop. At any approval gate you can
   override the `code_gen`/`test_gen` model for the next leg — or switch it to
   the Opus-4.8 orchestrator — from the console's per-leg model picker.

@@ -19,9 +19,14 @@ This document is the starting point for building **autoscientist**, a multi-agen
 >   currently **$200**.
 > - The primary operator console is now a push-based **web app** (Starlette/SSE);
 >   the Streamlit UI in §3 remains as a fallback.
+> - **The agent roster grew past the ten listed in §5/§6.** The built pipeline
+>   now has twelve specialist agents: a new **`figure_gen`** (between
+>   `results_validator` and `paper_writer`, renders the paper's figures from the
+>   validated results) and **`repo_publisher`** were added alongside the original
+>   ten. The §5/§6 lists below are the original spec, not the current roster.
 >
-> The architecture, principles (§4), checkpoints (§7), and verification (§5)
-> describe the system as built and remain accurate.
+> The principles (§4), checkpoints (§7), and verification (§5) describe the
+> system as built and remain accurate.
 
 You (Claude Code) are picking this up at Phase 0. Read this entire document before writing any code. Implement strictly in phase order — earlier phases are dependencies for later ones. When you finish a phase, run the smoke tests for it before moving on.
 

@@ -1,5 +1,13 @@
 # Phase 8 runbook -- pneumonia-data-efficiency end-to-end
 
+> **HISTORICAL (preserved 2026-06-22).** This runbook documents the original
+> Phase 8 launch against the `pneumonia-data-efficiency` v1 test project, which
+> has since been **purged** — its `projects/pneumonia-data-efficiency/` tree,
+> datasets, and DB rows no longer exist. The flagship deliverable is now
+> **`math693a-limited-descent`**. The checkpoint flow, pause/resume, and
+> spend-monitoring procedure below still apply; substitute a live project id for
+> any `projects/pneumonia-data-efficiency/...` path before running.
+
 KICKOFF.md Section 8: "Run the pipeline against the v1 test project.
 Operator approves at all five checkpoints. Diff outputs against
 expectations. Capture failures as new tests. This is when the pipeline
@@ -175,7 +183,7 @@ requires manual SQLite edit -- see `state/db.py` schema).
 
 ## 5. Spend monitoring
 
-The runtime enforces the global $150/month cap with a $5 buffer
+The runtime enforces the global $200/month cap with a $5 buffer
 (KICKOFF.md Section 2). Per-project soft cap is documented in
 `projects/pneumonia-data-efficiency/config.toml` for operator
 visibility but is not enforced by the runtime.

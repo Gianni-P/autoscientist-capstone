@@ -4,20 +4,19 @@ A reworking of the undergraduate project **"Limited Descent: The Use of Gradient
 Descent in Mountain Rescue"** (Math 693A final, G. Pucillo) into a well-posed
 **constrained-descent / safe-path-finding** study for the autoscientist pipeline.
 
-Original PDF: `C:/Users/gdp/Downloads/Math 693A Final.pdf`.
+Source: the author's original Math 693A final-project report.
 
 ## Why this project exists
 
 It is the **cheapest and cleanest end-to-end candidate** the pipeline has had,
-and it removes the two things that have blocked every prior run (see
-`../../ASSESSMENT_2026-05-29.md`):
+and it removes the two things that have blocked every prior run:
 
 | Blocker on prior runs | Here |
 |---|---|
 | Expensive code loop / data plumbing | Pure NumPy/SciPy, **no external data**, seconds per run, < 15 min full sweep |
 | No real domain expertise (clinical) | The subject **is** numerical optimization — the agents reason about it natively |
 
-So it is the intended **first project to traverse CP3–CP5 autonomously**.
+It became the **first project to traverse CP3–CP5 end-to-end** — see **Outcome** below.
 
 ## The original method, and its admitted flaw
 
@@ -44,6 +43,27 @@ cap) that can spin forever on a cliff face.
 A clean "feasible but far from optimal" result is a legitimate
 negative/limitation finding at the workshop / short-methods-note ceiling — and
 gives the verification harness a genuine correctness story to check.
+
+## Outcome
+
+The pipeline carried this project end-to-end through all five human checkpoints
+to a compiled paper and a self-contained, reproducible release repo (in
+[`release/`](release/)). A dedicated **`figure_gen`** agent rendered the paper's
+four result figures from the validated runs — Corrected Optimality Gap by
+strategy and terrain, grade-feasibility (unconstrained vs. the rotation
+heuristic), the H1 rotation-COG test across terrains, and the grid-reference
+quantisation-bias check — and embedded them in `release/paper/paper.pdf`;
+`release/scripts/generate_figures.py` regenerates them from the result
+summaries in `release/results/`.
+
+The headline result is a clean **feasible-but-not-optimal** finding: the rotation
+heuristic and the principled feasible-cone projection stay grade-feasible and
+match or beat the Dijkstra shortest-safe-path reference on the smooth terrains,
+while a ridge terrain exposes a large optimality gap for every method, and
+unconstrained steepest descent violates the grade limit on a third or more of its
+steps. Stated honestly: this is a **work-in-progress draft** — the simulated peer
+review returned *major revise* (narrow experimental scope and a reference list to
+clean up), which the pipeline surfaced at the final checkpoint rather than hid.
 
 ## Design
 
@@ -85,7 +105,7 @@ the full pre-flight, pause/resume, and spend-monitoring details):
 
 ```bash
 # Terminal A — the runner
-cd /mnt/d/autoscientist
+cd ~/autoscientist
 set -a; source .env; set +a
 PAYLOAD=$(cat projects/math693a-limited-descent/kickoff_payload.json)
 uv run python -m autoscientist.runtime.runner \
@@ -95,7 +115,8 @@ uv run python -m autoscientist.runtime.runner \
 # Note the printed run_id.
 
 # Terminal B — the operator console
-uv run streamlit run src/autoscientist/checkpoints/ui.py
+uv run autoscientist-web   # http://127.0.0.1:8650
+# (Streamlit fallback: uv run streamlit run src/autoscientist/checkpoints/ui.py)
 ```
 
 You will be paused at **CP1 (idea selection)** first, then **CP2
@@ -115,6 +136,9 @@ arrive on a real run.
 
   This is the regression gate for the new handlers, since the WSL venv test
   suite can't be run from the Windows host.
-- The `code_gen`/`test_gen` loop routes to local `qwen2.5:32b` via Ollama
-  (≈ $0); the `$12` project soft cap is the backstop. Confirm Ollama is up
-  (`scripts/smoke_local_toolcall.py`) before launching.
+- Model routing is **operator-selectable per leg** at each checkpoint: the
+  `code_gen` / `test_gen` / `figure_gen` agents can run on a hosted model, a
+  local `qwen2.5:32b` worker (≈ $0) via Ollama, or the **Opus-orchestrator**
+  mode (Opus plans and spot-checks; the local worker writes the files). A
+  per-project soft cap is the backstop. If you route to a local model, confirm
+  Ollama is up (`scripts/smoke_local_toolcall.py`) before launching.

@@ -89,7 +89,8 @@ button { font-family: inherit; }
   border-bottom: 1px solid var(--hairline);
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: var(--sidebar-w); }
-.brand-mark { font-size: 20px; filter: saturate(1.1); }
+.brand-mark { display: inline-flex; align-items: center; }
+.brand-mark img { width: 24px; height: 24px; display: block; }
 .brand-title { font-weight: 600; font-size: 15px; }
 .brand-sub { font-size: 11px; color: var(--text-3); margin-top: -2px; }
 
@@ -197,7 +198,8 @@ button { font-family: inherit; }
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 8px; color: var(--text-3); text-align: center;
 }
-.empty-mark { font-size: 44px; opacity: 0.5; }
+.empty-mark { opacity: 0.5; }
+.empty-mark img { width: 56px; height: 56px; display: block; }
 .empty-title { font-size: 18px; color: var(--text-2); font-weight: 600; }
 .empty-sub { max-width: 360px; font-size: 13px; }
 

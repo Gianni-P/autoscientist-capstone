@@ -1,6 +1,6 @@
 # autoscientist — A Human-Gated Harness for Trustworthy Autonomous Research
 
-**Subtitle:** Eleven specialist agents turn a research direction into a paper and a reproducible repo — safety and correctness enforced by the harness
+**Subtitle:** Twelve specialist agents turn a research direction into a paper and a reproducible repo — safety and correctness enforced by the harness
 
 **Track:** Freestyle
 
@@ -12,7 +12,7 @@ Autonomous "research agents" are easy to demo and easy to fool. Ask one to "stud
 
 The hard part of autonomous research is therefore *not* generating text. It is building the **safety envelope** that makes the output trustworthy enough to act on: the sandbox that contains the code, the budget gate that stops a runaway loop, the deterministic checks the model cannot talk its way past, and the human approvals at the points where being wrong is expensive. That envelope is an engineering problem, and it is exactly the "agentic engineering" discipline the course contrasts against casual vibe coding.
 
-**autoscientist** is that envelope. It turns a one-line research direction into a finished academic paper and a self-contained, reproducible code repository by driving **eleven specialist LLM agents** through a constrained, human-gated pipeline. Every expensive or irreversible step is sandboxed, budget-capped, independently verified, and gated by a human at five mandatory checkpoints.
+**autoscientist** is that envelope. It turns a one-line research direction into a finished academic paper and a self-contained, reproducible code repository by driving **twelve specialist LLM agents** through a constrained, human-gated pipeline. Every expensive or irreversible step is sandboxed, budget-capped, independently verified, and gated by a human at five mandatory checkpoints.
 
 ## Why agents (and why not one prompt)
 
@@ -23,6 +23,7 @@ A single prompt cannot do this safely, because the task is genuinely multi-stage
 - **methodology** needs to commit to datasets, baselines, metrics, and a statistics plan;
 - **code and test synthesis** need file-writing and a sandbox;
 - **code review and results validation** need to *re-derive* claims, not trust them;
+- **figure generation** writes and runs a plotting script to render the paper's figures from the validated results;
 - **paper drafting and peer review** need citation verification and LaTeX;
 - **release** needs to publish a curated repo.
 
@@ -43,7 +44,7 @@ research direction
        └─ revise ─┘  (bounded loop, capped then escalated to ③)  │
   ┌──────────────────────────────────────────────────────────────┘
   ▼
-  paper_writer → peer_reviewer ──⑤── repo_publisher → paper.pdf + release repo
+  figure_gen → paper_writer → peer_reviewer ──⑤── repo_publisher → paper.pdf + release repo
 
   ①..⑤  five mandatory human-in-the-loop checkpoints
 ```
@@ -72,7 +73,7 @@ The capstone asks for at least three. I demonstrate three core concepts plus a b
 
 ### 1. Multi-agent system (Code)
 
-Eleven specialist agents on a fixed handoff topology, each defined declaratively (`agents/`) with a system prompt, a capability-scoped toolset, and allowed handoff targets, and driven by a shared run loop (`runtime/runner.py`). On top of that sits the orchestrator-and-worker pattern above (`runtime/orchestration.py`) — a multi-agent system *within* an agent. Agents communicate only through structured handoff payloads, and off-topology or missing handoffs are corrected by the harness rather than blindly followed.
+Twelve specialist agents on a fixed handoff topology, each defined declaratively (`agents/`) with a system prompt, a capability-scoped toolset, and allowed handoff targets, and driven by a shared run loop (`runtime/runner.py`). The newest agent, `figure_gen`, renders the paper's figures from the validated results — it writes and runs a plotting script, then hands the figures to `paper_writer` to embed — and supports the same Opus-orchestrator mode as the code agents. On top of that sits the orchestrator-and-worker pattern above (`runtime/orchestration.py`) — a multi-agent system *within* an agent. Agents communicate only through structured handoff payloads, and off-topology or missing handoffs are corrected by the harness rather than blindly followed.
 
 ### 2. MCP server (Code)
 
@@ -108,7 +109,7 @@ The course splits trust into two axes — **security** (did the agent stay in bo
 
 ## Result: a real end-to-end deliverable
 
-The flagship run reworked an undergraduate study, *"Limited Descent: The Use of Gradient Descent in Mountain Rescue,"* into a well-posed **constrained-descent / safe-path-finding** study and carried it autonomously through all five checkpoints to a compiled paper and a reproducible repo (`projects/math693a-limited-descent/`). It compares a rotation heuristic, a feasible-cone projection, and unconstrained steepest descent against a Dijkstra/A\* shortest-safe-path ground truth — pure NumPy/SciPy, no external data, full sweep under fifteen minutes, with optimization-specific pitfall checks enforced throughout. The deliverable is a `paper.pdf` plus a `src/` + ~30 tests + results + paper release tree.
+The flagship run reworked an undergraduate study, *"Limited Descent: The Use of Gradient Descent in Mountain Rescue,"* into a well-posed **constrained-descent / safe-path-finding** study and carried it autonomously through all five checkpoints to a compiled paper and a reproducible repo (`projects/math693a-limited-descent/`). It compares a rotation heuristic, a feasible-cone projection, and unconstrained steepest descent against a Dijkstra/A\* shortest-safe-path ground truth — pure NumPy/SciPy, no external data, full sweep under fifteen minutes, with optimization-specific pitfall checks enforced throughout. The deliverable is a `paper.pdf` (its figures rendered by a dedicated `figure_gen` agent) plus a `src/` + ~30 tests + results + paper release tree.
 
 ## Limitations (stated honestly)
 

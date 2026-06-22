@@ -17,7 +17,7 @@ generating text; it is building the **safety envelope** that makes autonomous
 research trustworthy enough to act on.
 
 **autoscientist** turns a one-line research direction into a finished academic
-paper **and** a reproducible code repository, by driving eleven specialist LLM
+paper **and** a reproducible code repository, by driving twelve specialist LLM
 agents through a constrained, human-gated harness. Every expensive or
 irreversible step is sandboxed, budget-capped, independently verified, and gated
 by a human at five mandatory checkpoints. It is the disciplined "agentic
@@ -28,8 +28,8 @@ domain there is: doing science *correctly*.
 
 A single prompt cannot do this safely. The work is genuinely multi-stage —
 literature review, idea generation and critique, methodology design, code and
-test synthesis, code review, results validation, paper drafting, peer review,
-and release — and each stage needs a different capability set, a different model,
+test synthesis, code review, results validation, figure generation, paper
+drafting, peer review, and release — and each stage needs a different capability set, a different model,
 and its own verification. Splitting it into specialist agents on a fixed handoff
 topology gives each agent a small, auditable contract, a narrow capability-scoped
 toolset, and a checkpoint where a human can approve / edit / re-run / reject
@@ -51,7 +51,8 @@ research direction
        └─ revise ─┘  (bounded loop, capped then escalated to ③)  │
   ┌──────────────────────────────────────────────────────────────┘
   ▼
-  paper_writer → peer_reviewer ──⑤── repo_publisher → paper.pdf + release repo
+  figure_gen → paper_writer → peer_reviewer ──⑤── repo_publisher → paper.pdf + release repo
+  (figure_gen renders the paper's figures from the validated results)
 
   ①..⑤  five mandatory human-in-the-loop checkpoints (approve / edit / re-run / reject)
 ```
@@ -60,7 +61,7 @@ The harness wrapped around that pipeline:
 
 ```
   routing   per-leg model picker at each gate; "Opus-orchestrator" mode for
-            code_gen/test_gen → delegates file-writing to a local $0 worker
+            code_gen/test_gen/figure_gen → delegates file-writing to a local $0 worker
      │
   tools     sandboxed execute · check_imports · write_file · literature ·
             latex_compile · citation_check · GitHub MCP
@@ -75,7 +76,7 @@ The harness wrapped around that pipeline:
 
 | Course concept | Where | In autoscientist |
 |---|---|---|
-| **Agent / Multi-agent system** | Code | 11-agent handoff topology (`runtime/runner.py`, `agents/`) + an Opus-orchestrator that delegates file-writing to a local worker (`runtime/orchestration.py`) |
+| **Agent / Multi-agent system** | Code | 12-agent handoff topology (`runtime/runner.py`, `agents/`), including a `figure_gen` step that renders the paper's figures from the results, + an Opus-orchestrator that delegates file-writing to a local worker (`runtime/orchestration.py`) |
 | **MCP server** | Code | GitHub MCP publishing via a sync↔MCP bridge over **stdio + remote HTTP/SSE**, scoped & graceful-degrading (`clients/mcp_bridge.py`, `config/mcp.toml`) |
 | **Security features** | Code | Sandboxed `execute` (CPU/mem/time caps, network blocked, argv-allowlist), monthly **budget circuit-breaker** (reserve-before-call), 5 HITL checkpoints, static `check_imports`, path-traversal guards |
 | **Deployability** *(bonus)* | Code/Video | Detached runner process + Starlette/SSE web console; one-line config to run cloud-only (see below) |
@@ -167,7 +168,8 @@ no terminal needed after launching the console.** Highlights:
   following checkpoint). Pick any model and it overrides just that agent for
   that leg, then resets at the next gate; unset agents use the
   `config/models.toml` default. For **`code_gen`** and **`test_gen`** the
-  picker also offers an **Opus-4.8 orchestrator** mode: Opus plans and
+  picker also offers an **Opus-4.8 orchestrator** mode (also available for
+  **`figure_gen`**): Opus plans and
   spot-checks while a local `qwen2.5-32b` worker writes the files (via a
   `delegate` tool), keeping the bulk code emission local (≈ $0) while a
   strong model owns correctness. The manager/worker models are configurable
@@ -369,7 +371,8 @@ reproducible code repo.
 * **Deliverables.** Compiled paper at
   `projects/math693a-limited-descent/latex/paper/paper.pdf` and a self-contained
   reproducible repo under `projects/math693a-limited-descent/release/`
-  (`src/` + ~30 `tests/` + `results/E1–E5_summary.json` + `paper/`).
+  (`src/` + ~30 `tests/` + `results/E1–E5_summary.json` + `paper/`, incl. the
+  four result figures + `scripts/generate_figures.py`).
 * **Run it.** `projects/math693a-limited-descent/README.md` has the full
   pre-flight, the zero-spend domain smoke
   (`scripts/smoke_numerical_optimization.py`), and the launch command. The

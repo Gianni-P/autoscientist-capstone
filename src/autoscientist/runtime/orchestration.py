@@ -9,7 +9,7 @@ approval gate, the runner (see ``runtime/runner._drive_loop``):
 
 The manager then plans the work and calls ``delegate`` for each file-level
 chunk. Every ``delegate`` call runs a *local* worker agent (``code_worker`` →
-qwen2.5-32b, $0) through the normal :func:`runner._invoke_agent` tool loop; the
+qwen3.6:27b, $0) through the normal :func:`runner._invoke_agent` tool loop; the
 worker writes the files directly to the sandbox and returns. ``delegate`` then
 hands the manager a **compact summary** (sandbox listing + ``check_imports``) so
 the manager reads spot-checks, not full files — that's where the cost saving is.

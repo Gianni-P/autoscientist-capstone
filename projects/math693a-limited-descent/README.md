@@ -138,7 +138,7 @@ arrive on a real run.
   suite can't be run from the Windows host.
 - Model routing is **operator-selectable per leg** at each checkpoint: the
   `code_gen` / `test_gen` / `figure_gen` agents can run on a hosted model, a
-  local `qwen2.5:32b` worker (≈ $0) via Ollama, or the **Opus-orchestrator**
+  local `qwen3.6:27b` worker (≈ $0) via Ollama, or the **Opus-orchestrator**
   mode (Opus plans and spot-checks; the local worker writes the files). A
   per-project soft cap is the backstop. If you route to a local model, confirm
   Ollama is up (`scripts/smoke_local_toolcall.py`) before launching.

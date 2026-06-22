@@ -25,9 +25,9 @@ kickoff_payload_path = "projects/math693a-limited-descent/kickoff_payload.json"
 # Per-project soft cap, enforced by router.py via assert_project_budget
 # (separate from, and in addition to, the monthly hard cap). Set even lower
 # than the tabular project: there is no data plumbing and the code surface is
-# small (a few hundred lines of NumPy). The code/test loop runs on local
-# qwen2.5:32b via Ollama for ~$0, so paid spend is mostly the science/writing
-# agents.
+# small (a few hundred lines of NumPy). The code/test loop defaults to Opus 4.8
+# (a local qwen3.6:27b worker via Ollama is the ~$0 alternative), so paid spend
+# is the Opus code loop plus the science/writing agents.
 # 2026-06-18: raised 20 -> 35 -> 45 -> 70. The 70 bump is for a COMPLETE rerun
 # from CP0 (lit_review -> idea_gen -> ... full pipeline) with Opus 4.8 as the
 # coder. A full run adds the science agents (lit_review/idea_gen/idea_critic/

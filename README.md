@@ -170,7 +170,7 @@ no terminal needed after launching the console.** Highlights:
   `config/models.toml` default. For **`code_gen`** and **`test_gen`** the
   picker also offers an **Opus-4.8 orchestrator** mode (also available for
   **`figure_gen`**): Opus plans and
-  spot-checks while a local `qwen2.5-32b` worker writes the files (via a
+  spot-checks while a local `qwen3.6:27b` worker writes the files (via a
   `delegate` tool), keeping the bulk code emission local (≈ $0) while a
   strong model owns correctness. The manager/worker models are configurable
   under `config/models.toml` (`[orchestrator]`, `[agents.code_worker]`); the
@@ -376,7 +376,8 @@ reproducible code repo.
 * **Run it.** `projects/math693a-limited-descent/README.md` has the full
   pre-flight, the zero-spend domain smoke
   (`scripts/smoke_numerical_optimization.py`), and the launch command. The
-  `code_gen`/`test_gen` loop routes to local `qwen2.5:32b` via Ollama (≈ $0),
-  with a `$190` project soft cap as the backstop. At any approval gate you can
-  override the `code_gen`/`test_gen` model for the next leg — or switch it to
-  the Opus-4.8 orchestrator — from the console's per-leg model picker.
+  `code_gen`/`test_gen` loop defaults to Opus 4.8, with a `$190` project soft
+  cap as the backstop. At any approval gate you can override either agent's
+  model for the next leg — route it to a local `qwen3.6:27b` worker via Ollama
+  (≈ $0) or to the Opus-4.8 orchestrator — from the console's per-leg model
+  picker.

@@ -48,12 +48,12 @@ CHECKPOINT_POLICY: dict[str, tuple[int, str]] = {
 PIPELINE_ORDER: tuple[str, ...] = (
     "lit_review", "idea_gen", "idea_critic", "methodology",
     "code_gen", "test_gen", "code_review",
-    "results_validator", "paper_writer", "peer_reviewer", "repo_publisher",
+    "results_validator", "figure_gen", "paper_writer", "peer_reviewer", "repo_publisher",
 )
 
 # Agents that support Opus-orchestrator mode (mirrors orchestration.ORCHESTRATABLE;
 # duplicated here to keep manager free of a runtime import).
-ORCHESTRATABLE_AGENTS: tuple[str, ...] = ("code_gen", "test_gen")
+ORCHESTRATABLE_AGENTS: tuple[str, ...] = ("code_gen", "test_gen", "figure_gen")
 
 STAGE_NAMES: dict[int, str] = {
     1: "idea_selection",

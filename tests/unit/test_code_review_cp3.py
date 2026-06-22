@@ -101,7 +101,7 @@ def runner_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     cfg.default["paths"]["projects_dir"] = str(projects_dir)
 
     for name in ("code_gen", "test_gen", "code_review",
-                 "results_validator", "paper_writer", "peer_reviewer"):
+                 "results_validator", "figure_gen", "paper_writer", "peer_reviewer"):
         cfg.models["agents"][name]["model"] = "mock_stub"
 
     yield cfg

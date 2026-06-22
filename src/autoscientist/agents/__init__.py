@@ -33,6 +33,7 @@ AGENT_NAMES: tuple[str, ...] = (
     "test_gen",
     "code_review",
     "results_validator",
+    "figure_gen",
     "paper_writer",
     "peer_reviewer",
     "repo_publisher",

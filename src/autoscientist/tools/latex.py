@@ -62,6 +62,15 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _cache_sha(tex_source: str, cache_extra: str | None) -> str:
+    """Cache key for a compile. Mixes ``cache_extra`` (e.g. a digest of the
+    figure bytes) into the .tex hash so a figure-only change — byte-identical
+    LaTeX referencing the same figure filenames but with different image bytes —
+    invalidates the cached PDF instead of shipping a stale render."""
+    material = tex_source if not cache_extra else f"{tex_source}\n\x00CACHE_EXTRA\x00{cache_extra}"
+    return _hash_text(material)
+
+
 def _parse_tectonic_log(log_text: str) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -84,11 +93,14 @@ def compile_latex(
     job_name: str = "paper",
     conn: sqlite3.Connection | None = None,
     keep_intermediates: bool = False,
+    cache_extra: str | None = None,
 ) -> LatexBuild:
     """Compile ``tex_source`` to PDF under ``output_dir``.
 
-    Caches by sha256(tex_source). On hit, decodes and writes the cached PDF
-    to ``output_dir / job_name.pdf`` and returns immediately.
+    Caches by sha256(tex_source [+ ``cache_extra``]). Pass ``cache_extra`` (a
+    digest of any non-.tex inputs baked into the PDF, e.g. the figure image
+    bytes) so a change there invalidates the cache. On hit, decodes and writes
+    the cached PDF to ``output_dir / job_name.pdf`` and returns immediately.
 
     Raises :class:`TectonicMissing` if tectonic is not installed.
     """
@@ -102,7 +114,7 @@ def compile_latex(
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_out = output_dir / f"{job_name}.pdf"
 
-    sha = _hash_text(tex_source)
+    sha = _cache_sha(tex_source, cache_extra)
     if conn is not None:
         cached = tool_cache.cache_get(conn, "latex.compile", sha)
         if cached is not None and cached.get("success"):

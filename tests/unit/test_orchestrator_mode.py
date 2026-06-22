@@ -33,8 +33,11 @@ def test_delegate_tool_registered():
     assert spec.input_schema["required"] == ["assignment"]
 
 
-def _drive_one_leg(tmp_path, monkeypatch, overrides):
-    """Drive a single code_gen leg; return the captured route() kwargs."""
+def _drive_one_leg(
+    tmp_path, monkeypatch, overrides,
+    *, starting_agent="code_gen", starting_payload='{"plan":"x"}',
+):
+    """Drive a single leg from ``starting_agent``; return the captured route() kwargs."""
     seen: list[dict] = []
 
     def fake_route(**kw):
@@ -57,7 +60,7 @@ def _drive_one_leg(tmp_path, monkeypatch, overrides):
     runner._drive_loop(
         conn=conn, cfg=cfg, log=structlog.get_logger("test"),
         run_id=run_id, project_id="orch",
-        starting_agent="code_gen", starting_payload='{"plan":"x"}',
+        starting_agent=starting_agent, starting_payload=starting_payload,
         max_handoffs=5, max_tool_rounds=3, enable_checkpoints=False,
         model_overrides=overrides,
     )
@@ -73,6 +76,22 @@ def test_orchestrator_mode_routes_to_manager_and_adds_delegate(tmp_path, monkeyp
     assert cg["override"] == "claude_opus_48"        # routed to the manager model
     assert "delegate" in cg["tools"]                  # delegate tool offered
     assert "ORCHESTRATOR MODE" in cg["system"]        # playbook appended
+
+
+def test_orchestrator_mode_figure_gen_routes_to_manager_and_adds_delegate(tmp_path, monkeypatch):
+    """figure_gen is orchestratable: selecting the orchestrator routes it to the
+    manager model, adds the delegate tool, and appends the playbook — just like
+    code_gen/test_gen."""
+    seen = _drive_one_leg(
+        tmp_path, monkeypatch, {"figure_gen": orchestration.ORCH_OVERRIDE},
+        starting_agent="figure_gen",
+    )
+    assert seen, "route() was never called"
+    fg = seen[0]
+    assert fg["agent"] == "figure_gen"
+    assert fg["override"] == "claude_opus_48"
+    assert "delegate" in fg["tools"]
+    assert "ORCHESTRATOR MODE" in fg["system"]
 
 
 def test_plain_alias_override_has_no_orchestrator_augmentation(tmp_path, monkeypatch):

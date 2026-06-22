@@ -116,6 +116,12 @@ def test_next_leg_agents():
     assert cp_manager.next_leg_agents("code_gen") == ["code_gen", "test_gen", "code_review"]
     assert cp_manager.next_leg_agents("methodology") == ["methodology"]
     assert cp_manager.next_leg_agents("results_validator") == ["results_validator"]
+    # figure_gen rides between CP4 (results_validator) and CP5 (peer_reviewer)
+    # without opening its own gate, so its leg spans figure_gen + paper_writer up
+    # to the next checkpoint agent.
+    assert cp_manager.next_leg_agents("figure_gen") == [
+        "figure_gen", "paper_writer", "peer_reviewer",
+    ]
     assert cp_manager.next_leg_agents("paper_writer") == ["paper_writer", "peer_reviewer"]
     assert cp_manager.next_leg_agents("repo_publisher") == ["repo_publisher"]
     assert cp_manager.next_leg_agents("DONE") == []
@@ -127,6 +133,10 @@ def test_validate_model_overrides():
         {"code_gen": "orchestrator", "test_gen": "qwen25_32b"}
     )
     assert err is None and clean == {"code_gen": "orchestrator", "test_gen": "qwen25_32b"}
+
+    # figure_gen is orchestratable too (it writes a matplotlib plot script)
+    clean, err = queries.validate_model_overrides({"figure_gen": "orchestrator"})
+    assert err is None and clean == {"figure_gen": "orchestrator"}
 
     # orchestrator only for orchestratable agents
     clean, err = queries.validate_model_overrides({"code_review": "orchestrator"})

@@ -30,7 +30,7 @@ Design notes
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import structlog
@@ -386,6 +386,148 @@ def _collect_results_artifacts(
     return out
 
 
+# Reconstruction notes surfaced to the agent when its thin handoff is rebuilt.
+_FIGURE_REBUILD_NOTE = (
+    "The upstream results_validator handed off a placeholder plan and/or empty "
+    "results; the runner rebuilt this payload from the run's methodology plan "
+    "and the materialised result JSON under sandbox/runs/. Plot ONLY numbers "
+    "that appear verbatim in `results` — never invent data. Write your plotting "
+    "script, run it to render the figures into figures/, write the "
+    "figures/figures.json manifest, then hand off to paper_writer."
+)
+_PAPER_REBUILD_NOTE = (
+    "The upstream handoff to you was thin (placeholder plan and/or empty "
+    "results); the runner rebuilt this payload from the run's methodology plan, "
+    "the materialised result JSON under sandbox/runs/, and the figure manifest "
+    "under figures/. Every number in your results section MUST come verbatim "
+    "from `results`, and every figure you embed MUST be one listed in `figures` "
+    "(use its `path` in \\includegraphics). Emit NO unfilled bracket stand-ins "
+    "(no result-placeholder, no citation-placeholder) — verify every citation "
+    "with citation_check or omit the claim entirely."
+)
+
+
+def _results_envelope(
+    *, sandbox: Path, plan_text: str | None, validator_summary: Any, note: str
+) -> dict[str, Any] | None:
+    """Build the ``{plan, results, validator_summary, _reconstructed_by_runner}``
+    envelope from the materialised result JSON under ``sandbox/runs/``.
+
+    Shared by the figure_gen and paper_writer rebuild paths (both ground their
+    work in the same validated results + plan). The ``plan`` is embedded as
+    structured data when it was itself a JSON-object string. Returns ``None``
+    when there are no result artifacts to ground the work. Never raises.
+    """
+    try:
+        results = _collect_results_artifacts(sandbox / "runs")
+    except Exception as e:  # pragma: no cover - defensive
+        log.error(
+            "payload_files.results_envelope_error",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return None
+    if not results:
+        return None
+    plan: Any = plan_text
+    if isinstance(plan_text, str):
+        parsed_plan = _extract_first_json_object(plan_text)
+        if parsed_plan is not None:
+            plan = parsed_plan
+    return {
+        "plan": plan,
+        "results": results,
+        "validator_summary": validator_summary,
+        "_reconstructed_by_runner": note,
+    }
+
+
+def _collect_figures(sandbox: Path) -> list[dict[str, str]]:
+    """Return the figure manifest ``[{path, caption, label}]`` from the sandbox.
+
+    figure_gen writes ``figures/figures.json`` (the authoritative manifest) next
+    to the rendered images. Prefer it; if it is missing or unparseable, fall
+    back to scanning ``figures/`` for image files and synthesising minimal
+    entries (empty caption) so paper_writer still learns the paths. Each ``path``
+    is sandbox-relative (e.g. ``figures/fig1.png``) — the path paper_writer
+    references with ``\\includegraphics`` and that ``latex_compile`` resolves by
+    copying ``figures/`` next to the compiled ``.tex``. Only entries whose image
+    actually exists on disk are kept. Never raises.
+    """
+    figures_dir = sandbox / "figures"
+    if not figures_dir.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    manifest = figures_dir / "figures.json"
+    try:
+        if manifest.is_file():
+            data = json.loads(manifest.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(data, dict):
+                entries = data.get("figures")
+            else:
+                entries = data
+            for e in entries or []:
+                if not isinstance(e, dict):
+                    continue
+                path = e.get("path")
+                if not isinstance(path, str) or not path:
+                    continue
+                rel = path if path.startswith("figures/") else f"figures/{PurePosixPath(path).name}"
+                if rel in seen or not (sandbox / rel).is_file():
+                    continue
+                seen.add(rel)
+                out.append({
+                    "path": rel,
+                    "caption": str(e.get("caption") or ""),
+                    "label": str(e.get("label") or ""),
+                })
+    except Exception:  # pragma: no cover - defensive; fall through to a disk scan
+        out, seen = [], set()
+    if out:
+        return out
+    # Fallback: no usable manifest — scan for rendered image files.
+    for p in sorted(figures_dir.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in (".png", ".pdf", ".jpg", ".jpeg", ".svg"):
+            continue
+        try:
+            rel = p.relative_to(sandbox).as_posix()
+        except Exception:
+            continue
+        if rel in seen:
+            continue
+        seen.add(rel)
+        out.append({"path": rel, "caption": "", "label": ""})
+    return out
+
+
+def build_figure_gen_payload_from_sandbox(
+    *,
+    project_id: str,
+    projects_root: Path | str,
+    plan_text: str | None,
+    validator_summary: Any = None,
+) -> str | None:
+    """Reconstruct a ``figure_gen`` input payload from the sandbox + plan.
+
+    figure_gen plots the validated results, so it needs the same authoritative
+    ``{plan, results, validator_summary}`` envelope paper_writer used to receive
+    directly from results_validator — which (being an LLM) frequently forwards a
+    placeholder plan + empty results. This rebuilds that envelope from the run's
+    methodology plan and the materialised result JSON under ``sandbox/runs/``.
+    Returns the JSON payload string, or ``None`` when there are no result
+    artifacts to plot (the caller keeps its existing fallback). Never raises.
+    """
+    sandbox = Path(projects_root) / project_id / "sandbox"
+    env = _results_envelope(
+        sandbox=sandbox, plan_text=plan_text,
+        validator_summary=validator_summary, note=_FIGURE_REBUILD_NOTE,
+    )
+    if env is None:
+        return None
+    return _serialize_within_budget(env)
+
+
 def build_paper_writer_payload_from_sandbox(
     *,
     project_id: str,
@@ -396,58 +538,36 @@ def build_paper_writer_payload_from_sandbox(
     """Reconstruct a ``paper_writer`` input payload from the sandbox + plan.
 
     ``paper_writer`` drafts the results section from the ``results`` object it
-    receives and grounds methods/intro in ``plan``. But the upstream
-    ``results_validator`` (an LLM) does not faithfully echo the large plan +
+    receives, grounds methods/intro in ``plan``, and embeds the ``figures``
+    figure_gen produced. But the upstream agent (an LLM — figure_gen, or
+    results_validator before it) does not faithfully echo the large plan +
     materialised result JSON into its handoff payload — observed 2026-06-18
-    (run_e93293803c98…): it forwarded ``"plan": "<the methodology plan>"`` (the
-    literal placeholder copied from its prompt) and ``"results": {"metrics":
-    []}`` (empty). paper_writer then had no numbers to write, so it emitted a
-    shell full of ``[RESULT FROM run]`` / ``[CITATION NEEDED]`` placeholders and
+    (run_e93293803c98…): ``"plan": "<the methodology plan>"`` (the literal
+    placeholder copied from its prompt) and ``"results": {"metrics": []}``
+    (empty). paper_writer then had no numbers to write, so it emitted a shell
+    full of ``[RESULT FROM run]`` / ``[CITATION NEEDED]`` placeholders and
     peer_reviewer rejected it on the hard "no unverified citations / no
     unsubstantiated numbers" rules — a degenerate CP5.
 
-    This rebuilds the ``{plan, results, validator_summary}`` envelope from the
-    authoritative sources: the methodology ``plan`` (passed in by the runner,
-    which pulls it from the run's ``code_gen`` input in the DB) and the real
-    result artifacts on disk under ``sandbox/runs/``. Returns the JSON payload
-    string, or ``None`` when there are no result artifacts to ground the paper
-    (the caller keeps its existing fallback). Never raises.
+    This rebuilds the ``{plan, results, validator_summary, figures}`` envelope
+    from the authoritative on-disk sources: the methodology ``plan`` (the run's
+    ``code_gen`` input in the DB), the real result artifacts under
+    ``sandbox/runs/``, and the figure manifest under ``figures/``. Returns the
+    JSON payload string, or ``None`` when there are no result artifacts to ground
+    the paper (the caller keeps its existing fallback). Never raises.
     """
-    try:
-        sandbox = Path(projects_root) / project_id / "sandbox"
-        results = _collect_results_artifacts(sandbox / "runs")
-    except Exception as e:  # pragma: no cover - defensive
-        log.error(
-            "payload_files.paper_rebuild_error",
-            project_id=project_id,
-            error=str(e),
-            error_type=type(e).__name__,
-        )
+    sandbox = Path(projects_root) / project_id / "sandbox"
+    env = _results_envelope(
+        sandbox=sandbox, plan_text=plan_text,
+        validator_summary=validator_summary, note=_PAPER_REBUILD_NOTE,
+    )
+    if env is None:
         return None
-    if not results:
-        return None
-    plan: Any = plan_text
-    if isinstance(plan_text, str):
-        # If the plan was itself emitted as a JSON object string, embed it as
-        # data so paper_writer reads structured fields, not an escaped blob.
-        parsed_plan = _extract_first_json_object(plan_text)
-        if parsed_plan is not None:
-            plan = parsed_plan
-    payload = {
-        "plan": plan,
-        "results": results,
-        "validator_summary": validator_summary,
-        "_reconstructed_by_runner": (
-            "The upstream results_validator handed off a placeholder plan and "
-            "empty results; the runner rebuilt this payload from the run's "
-            "methodology plan and the materialised result JSON under "
-            "sandbox/runs/. Every number in your results section MUST come "
-            "verbatim from `results`. Emit NO unfilled bracket stand-ins in the "
-            "draft (no result-placeholder, no citation-placeholder) — verify "
-            "every citation with citation_check or omit the claim entirely."
-        ),
-    }
-    return _serialize_within_budget(payload)
+    # Surface the rendered figures so paper_writer can embed them even when the
+    # upstream (figure_gen) handoff was thin — the manifest on disk is the
+    # authoritative source of figure paths + captions.
+    env["figures"] = _collect_figures(sandbox)
+    return _serialize_within_budget(env)
 
 
 def _serialize_within_budget(payload: dict[str, Any]) -> str:

@@ -15,8 +15,11 @@ overclaim novelty or impact.
 
 ## Inputs
 ```
-{"plan": <plan>, "results": <results>, "validator_summary": <validator JSON>}
+{"plan": <plan>, "results": <results>, "validator_summary": <validator JSON>,
+ "figures": [{"path": "figures/fig1.png", "caption": "...", "label": "fig:..."}]}
 ```
+`figures` are the figures `figure_gen` already rendered (the image files are on
+disk in the sandbox). Embed the relevant ones; never invent a figure path.
 
 ## Output
 Emit a single JSON object, then a `HANDOFF:` line.
@@ -75,6 +78,25 @@ HANDOFF: peer_reviewer
   do not insert a placeholder.
 - If `validator_summary.verdict != advance`, refuse to draft and emit
   `"sections": null, "blocked": "validator did not advance"` instead.
+
+## Figures
+- The `figures` input lists what `figure_gen` rendered: each entry has a `path`
+  (sandbox-relative, e.g. `figures/fig1.png`), a `caption`, and a `label`.
+  Reference each figure you use in the prose and embed it in the LaTeX with a
+  float, e.g.:
+  ```
+  \begin{figure}[t]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/fig1.png}
+    \caption{<caption from the figures input>}
+    \label{fig:...}
+  \end{figure}
+  ```
+  and cite it with `\ref{fig:...}`. The harness copies `figures/` next to the
+  `.tex` at compile time, so the relative `figures/<name>.png` path resolves.
+- Add `\usepackage{graphicx}` to the preamble of any `tex_source` you compile.
+- Only embed figures present in the `figures` input. If `figures` is empty or
+  absent, write the paper without figures — do not fabricate one.
 
 ## Compiling to PDF (optional)
 - Your REQUIRED output is the JSON `sections` object followed by the

@@ -98,7 +98,7 @@ which hands off through the agent graph:
 
 ```
 lit_review -> idea_gen -> idea_critic -> methodology -> code_gen ->
-test_gen -> code_review -> results_validator -> paper_writer ->
+test_gen -> code_review -> results_validator -> figure_gen -> paper_writer ->
 peer_reviewer -> [accept ? repo_publisher : paper_writer (revise)] ->
 ... repo_publisher -> HANDOFF: DONE
 ```

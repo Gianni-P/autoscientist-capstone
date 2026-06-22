@@ -37,7 +37,9 @@ from autoscientist.runtime.config import load_config
 from autoscientist.state.db import open_db
 
 PROJECT_ID = "pneumonia-backhalf-slice"
-FORWARD_TARGET = {4: "paper_writer", 5: "repo_publisher"}
+# Stage 4 (results_validator) now advances to figure_gen (which renders the
+# paper's figures and then hands to paper_writer); stage 5 to repo_publisher.
+FORWARD_TARGET = {4: "figure_gen", 5: "repo_publisher"}
 MAX_RESOLVES = 8
 SPEND_ABORT_USD = 12.0
 

@@ -3,7 +3,7 @@
 Returns deterministic responses based on agent name. Used by:
 
   * ``echo`` / ``handoff`` Phase 1 stubs — counter-passing protocol.
-  * The 10 real Phase 2 agents — schema-valid JSON fixtures so
+  * The 11 real Phase 2 agents (incl. figure_gen) — schema-valid JSON fixtures so
     ``smoke_phase2.py`` can exercise the chain without touching Anthropic
     or Ollama.
 
@@ -309,7 +309,34 @@ def _fix_results_validator(inbound: str) -> str:
         "verdict": "advance",
         "operator_payload": "Mock results — no concerns.",
     }
-    return _emit(body, "paper_writer", {"plan": {}, "results": {}, "validator_summary": body})
+    return _emit(body, "figure_gen", {"plan": {}, "results": {}, "validator_summary": body})
+
+
+def _fix_figure_gen(inbound: str) -> str:
+    figures = [
+        {"path": "figures/fig1_overview.png",
+         "caption": "Mock overview figure for the smoke chain.",
+         "label": "fig:overview"},
+    ]
+    body = {
+        # ``files`` lets the runner's payload safety-net persist the plot script
+        # to the sandbox so the smoke can assert it landed (mirrors _fix_code_gen).
+        "files": [
+            {"path": "scripts/generate_figures.py",
+             "content": "# mock figure script\nprint('mock figures')\n"},
+        ],
+        "figures": figures,
+        "plot_script": "scripts/generate_figures.py",
+        "run_cmd": "python scripts/generate_figures.py",
+        "notes": "mock fixture for smoke",
+    }
+    payload = {
+        "plan": {},
+        "results": {},
+        "validator_summary": {},
+        "figures": figures,
+    }
+    return _emit(body, "paper_writer", payload)
 
 
 def _fix_paper_writer(inbound: str) -> str:
@@ -420,6 +447,7 @@ _FIXTURES: dict[str, Callable[[str], str]] = {
     "test_gen": _fix_test_gen,
     "code_review": _fix_code_review,
     "results_validator": _fix_results_validator,
+    "figure_gen": _fix_figure_gen,
     "paper_writer": _fix_paper_writer,
     "peer_reviewer": _fix_peer_reviewer,
     "judge": _fix_judge,

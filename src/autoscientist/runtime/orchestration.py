@@ -1,6 +1,6 @@
-"""Opus-orchestrator mode for code_gen / test_gen.
+"""Opus-orchestrator mode for code_gen / test_gen / figure_gen.
 
-When the operator picks "Opus orchestrator" for ``code_gen``/``test_gen`` at an
+When the operator picks "Opus orchestrator" for ``code_gen``/``test_gen``/``figure_gen`` at an
 approval gate, the runner (see ``runtime/runner._drive_loop``):
 
   1. routes that agent's own calls to the manager model (Opus 4.8),
@@ -34,15 +34,19 @@ log = structlog.get_logger("autoscientist.orchestration")
 # a plain alias override which just swaps the model.
 ORCH_OVERRIDE = "orchestrator"
 
-# Only these agents can be orchestrated (they emit the bulk of the code/tests).
-ORCHESTRATABLE: frozenset[str] = frozenset({"code_gen", "test_gen"})
+# Only these agents can be orchestrated (they emit the bulk of the code/tests/
+# figures). figure_gen writes a matplotlib plot script, so it benefits from the
+# same plan-then-delegate pattern; it runs `execute` itself to render (the
+# worker has no execute). Mirrored in checkpoints.manager.ORCHESTRATABLE_AGENTS.
+ORCHESTRATABLE: frozenset[str] = frozenset({"code_gen", "test_gen", "figure_gen"})
 
 # Fallback config values if [orchestrator] is missing/partial in models.toml.
 _DEFAULT_MANAGER_MODEL = "claude_opus_48"
 _DEFAULT_WORKER_AGENT = "code_worker"
 _DEFAULT_WORKER_ROUNDS = 14
 
-# Appended to code_gen.md / test_gen.md when the agent runs as an orchestrator.
+# Appended to an orchestratable agent's prompt (code_gen / test_gen / figure_gen)
+# when it runs as an orchestrator.
 ORCHESTRATOR_APPENDIX = """
 
 ---

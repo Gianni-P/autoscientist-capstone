@@ -55,6 +55,7 @@ from autoscientist.runtime.orchestration import (
 )
 from autoscientist.runtime.payload_files import (
     build_code_review_payload_from_sandbox,
+    build_figure_gen_payload_from_sandbox,
     build_paper_writer_payload_from_sandbox,
     build_peer_reviewer_payload_from_sandbox,
     persist_files_from_payload,
@@ -128,7 +129,8 @@ _FORWARD_TARGET: dict[str, str] = {
     "code_gen": "test_gen",
     "test_gen": "code_review",
     "code_review": "results_validator",
-    "results_validator": "paper_writer",
+    "results_validator": "figure_gen",
+    "figure_gen": "paper_writer",
     "paper_writer": "peer_reviewer",
 }
 
@@ -243,6 +245,20 @@ def _is_thin_paper_writer_payload(payload: str) -> bool:
         if not has_rows and not has_numbers:
             return True
     return False
+
+
+def _is_thin_figure_gen_payload(payload: str) -> bool:
+    """True when an inbound figure_gen payload has no real results to plot.
+
+    figure_gen draws the paper's figures from the validated ``results``. It is
+    now the agent results_validator hands forward to, so it inherits the exact
+    failure paper_writer used to have: results_validator (an LLM) frequently
+    forwards a placeholder plan + empty results, leaving figure_gen nothing to
+    plot. The thinness criterion is identical (no usable result numbers), so we
+    reuse :func:`_is_thin_paper_writer_payload`; on a thin payload the runner
+    rebuilds figure_gen's input from the run's plan + the result JSON on disk.
+    """
+    return _is_thin_paper_writer_payload(payload)
 
 
 def _is_thin_peer_reviewer_payload(payload: str) -> bool:
@@ -971,6 +987,37 @@ def _drive_loop(
                         agent=current_agent_name,
                         chars=len(rebuilt),
                         thin_payload_chars=len((current_payload or "").strip()),
+                    )
+                    inbound_text = rebuilt
+
+            # figure_gen plots the validated results, so — like paper_writer — a
+            # placeholder plan + empty results from results_validator leaves it
+            # nothing to draw. Rebuild its input from the run's real plan (the
+            # code_gen input in the DB) and the materialised result JSON in the
+            # sandbox so the figures come from actual numbers. The figures
+            # themselves are produced downstream by figure_gen's own execute
+            # call; this only ensures it RECEIVES the results to plot.
+            if current_agent_name == "figure_gen" and _is_thin_figure_gen_payload(
+                current_payload or ""
+            ):
+                projects_root = cfg.root / cfg.default.get("paths", {}).get(
+                    "projects_dir", "projects"
+                )
+                plan_text, validator_summary = _fetch_plan_and_validator(conn, run_id)
+                rebuilt = build_figure_gen_payload_from_sandbox(
+                    project_id=project_id,
+                    projects_root=projects_root,
+                    plan_text=plan_text,
+                    validator_summary=validator_summary,
+                )
+                if rebuilt:
+                    log.warning(
+                        "run.figure_gen_payload_reconstructed",
+                        agent=current_agent_name,
+                        chars=len(rebuilt),
+                        thin_payload_chars=len((current_payload or "").strip()),
+                        had_plan=bool(plan_text),
+                        had_validator_summary=validator_summary is not None,
                     )
                     inbound_text = rebuilt
 

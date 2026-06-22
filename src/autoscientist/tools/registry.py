@@ -387,8 +387,32 @@ def _h_latex_compile(inp: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     out_dir = ctx.projects_root / ctx.project_id / "latex" / inp.get("job_name", "paper")
     if not latex.is_available():
         return {"success": False, "error": "tectonic not on PATH"}
+    # Make figure assets available next to the .tex so relative
+    # \includegraphics{figures/...} paths resolve. figure_gen renders figures
+    # into the sandbox (projects/<id>/sandbox/figures/), but tectonic compiles
+    # in projects/<id>/latex/<job>/ — mirror the figures dir there first, AND
+    # fold a digest of the figure bytes into the compile cache key so a
+    # figure-only change (byte-identical .tex) doesn't return a stale cached PDF
+    # with the old images embedded. Best-effort: a failure must never block.
+    fig_digest: str | None = None
+    try:
+        import hashlib
+        import shutil
+        sandbox_figures = ctx.projects_root / ctx.project_id / "sandbox" / "figures"
+        if sandbox_figures.is_dir():
+            out_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(sandbox_figures, out_dir / "figures", dirs_exist_ok=True)
+            h = hashlib.sha256()
+            for fp in sorted(sandbox_figures.rglob("*")):
+                if fp.is_file():
+                    h.update(fp.relative_to(sandbox_figures).as_posix().encode("utf-8"))
+                    h.update(fp.read_bytes())
+            fig_digest = h.hexdigest()
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("latex_compile.figure_copy_failed", error=str(e))
     build = latex.compile_latex(
         tex, output_dir=out_dir, job_name=inp.get("job_name", "paper"), conn=ctx.conn,
+        cache_extra=fig_digest,
     )
     return {
         "success": build.success,

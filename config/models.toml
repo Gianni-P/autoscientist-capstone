@@ -286,6 +286,22 @@ model = "claude_sonnet"
 cost_ceiling_usd = 1.00
 invocation_ceiling_usd = 3.00  # cumulative across the round loop
 
+[agents.figure_gen]
+# Figure generation (2026-06-21). Sits between results_validator and paper_writer:
+# reads the validated results from sandbox/runs/, writes a matplotlib plotting
+# script (scripts/generate_figures.py), runs it with `execute` to render figures
+# into sandbox/figures/, then hands the figure paths+captions to paper_writer
+# (which embeds them via \includegraphics). Like code_gen it is a code-writing
+# agent with a sandbox + execute, and it supports Opus-orchestrator mode
+# (operator-selectable per leg at CP4). Default = Sonnet: plotting is lighter
+# than the experiment code, and the operator can pick Opus / the Opus-
+# orchestrator at the gate. Ceilings give headroom for an Opus-orchestrator leg
+# (the agent's calls route to the manager model in that mode).
+model = "claude_sonnet"
+cost_ceiling_usd = 3.00
+max_tool_rounds = 20        # write-script -> execute-render -> fix loop needs room
+invocation_ceiling_usd = 8.00
+
 [agents.paper_writer]
 model = "claude_opus"
 cost_ceiling_usd = 5.00

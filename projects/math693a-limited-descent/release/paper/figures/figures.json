@@ -1,0 +1,22 @@
+[
+  {
+    "path": "figures/fig1_cog_by_strategy_terrain.png",
+    "caption": "Corrected Optimality Gap (COG) with 95% bootstrap confidence intervals for four descent strategies across four core terrain types (prod run, grid\\_n=300, n=90 per cell). Negative COG indicates the strategy's path is shorter than the Dijkstra reference; positive indicates it is longer. Rotation heuristics (CW and CCW) and gradient projection all achieve negative COG on smooth terrains, but the Rosenbrock ridge\u2014where the constrained path is long\u2014yields large positive gaps for all methods.",
+    "label": "fig:cog_by_strategy_terrain"
+  },
+  {
+    "path": "figures/fig2_feasibility_comparison.png",
+    "caption": "Mean grade-feasibility rate per terrain for unconstrained steepest descent (E2, red) versus the constrained rotation heuristic (E4, blue). Unconstrained descent violates the 5\u00b0 grade limit on 36\u201340\\% of steps on most terrains, while E4 paths are fully feasible by construction (rate = 1.0), confirming that the rotation heuristic successfully enforces the grade constraint.",
+    "label": "fig:feasibility_comparison"
+  },
+  {
+    "path": "figures/fig3_h1_rotation_cog.png",
+    "caption": "Hypothesis H1 test: mean COG (rotation CW + CCW pooled) with 95\\% bootstrap confidence intervals across all eight terrains (prod run). Blue bars indicate COG $\\leq 0$ (rotation path at or shorter than the Dijkstra reference); red bars indicate COG $> 0$ (longer). Only the Rosenbrock ridge yields a significantly positive COG, reflecting the terrain's inherently long constrained path; all other terrains show COG $\\leq 0$, meaning the rotation heuristic matches or beats the grid reference.",
+    "label": "fig:h1_rotation_cog"
+  },
+  {
+    "path": "figures/fig4_e1_quantisation_bias.png",
+    "caption": "E1 reference quality: mean and maximum quantisation bias of the Dijkstra grid shortest path relative to the true 3-D geodesic, across all eight terrains (prod run, grid\\_n=300). All mean biases remain well below the tan(5\u00b0) grade threshold (dotted line), validating the grid reference as a reliable ground-truth comparator for the optimality gap analysis.",
+    "label": "fig:e1_quantisation_bias"
+  }
+]

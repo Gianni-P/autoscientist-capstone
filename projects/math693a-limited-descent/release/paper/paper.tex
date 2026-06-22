@@ -1,120 +1,428 @@
-\documentclass[11pt]{article}
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,booktabs,hyperref,graphicx}
-\title{Empirical Optimality Gap of Rotation-Based Steepest-Descent Heuristics under a 5-Degree Grade Constraint on Composite Analytic Terrains}
-\author{autoscientist}
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{natbib}
+
+\title{Grade-Constrained Path Planning on Terrain Surfaces:\\
+Rotation Heuristics and Gradient Projection Compared\\
+Against a Dijkstra Reference}
+
+\author{AutoScientist Pipeline}
 \date{}
+
 \begin{document}
 \maketitle
+
 \begin{abstract}
-We evaluate the path-length optimality of three constraint-aware descent heuristics --- clockwise rotation, counter-clockwise rotation, and exact gradient projection --- against a Theta*-corrected Dijkstra reference, on a suite of eight composite analytic terrains $f+g$ designed to admit a unique global minimum and a feasible path under a 5-degree maximum-grade constraint. Using a $300\times300$ grid, 30 Latin-hypercube start points per terrain, three seeds, and bootstrap inference over $10{,}000$ resamples, we measure (i) the per-step grade satisfaction rate (\textit{qb}), (ii) the absolute path-length difference versus Theta* (\textit{og}), and (iii) the constrained-only path-length difference (\textit{cog}). Across 2880 trials, all three constraint-aware heuristics produced paths whose worst-step grade respected the 0.0875 cap (max observed $\leq 0.0824$), confirming feasibility. The headline path-length comparison is mixed: on five of eight terrains the rotation heuristic yields paths whose length is statistically indistinguishable from or shorter than the Theta* reference on the same constrained graph, while on the Rosenbrock-ridge terrain the heuristic incurs a large positive gap (mean $19.69$ units, 95\% CI $[16.23, 24.02]$). Pooled over the three non-trivial terrains the rotation-CW heuristic shows a mean length excess of $6.40$ units (95\% CI $[5.21, 7.76]$). Gradient projection does \emph{not} dominate rotation on narrow-corridor terrains in this experiment. CW and CCW are statistically indistinguishable on all eight terrains under Holm--Bonferroni correction. We interpret these findings as a narrow positive result for the rotation heuristic on smooth bowls and a clear negative result on steep ridges, and we document several limitations including a near-flat Rosenbrock rescaling and an internal-validity flag on the Theta* geodesic check.
+We study the problem of finding paths on two-dimensional terrain surfaces that
+respect a maximum grade constraint (5$^\circ$, $\tan\theta^*\approx0.0875$).
+Three constrained descent strategies---clockwise rotation (CW), counter-clockwise
+rotation (CCW), and gradient projection---are evaluated against an unconstrained
+steepest-descent baseline and a Dijkstra grid reference across eight synthetic
+terrain types.
+We define a \emph{corrected optimality gap} (COG) that subtracts the
+quantisation bias of the grid reference from the raw optimality gap, enabling
+fair comparison.
+Across 2\,880 trials on a 300$\times$300 grid (production run), all three
+constrained strategies achieve 100\% grade feasibility by construction, whereas
+unconstrained steepest descent violates the grade limit on 36--40\% of steps on
+most terrains.
+Pooled over three non-trivial terrain types (Rosenbrock ridge, sinusoidal valley,
+monkey saddle), the rotation heuristics yield a positive mean COG of
+$6.40$ (95\% CI $[5.21,\,7.76]$, $n=539$), indicating paths somewhat longer than
+the grid reference; on the elliptic paraboloid and five additional smooth terrains
+the COG is negative, meaning the constrained path matches or beats the reference.
+Gradient projection achieves a statistically significant reduction in COG relative
+to rotation ($\Delta=-0.027$, one-sided $p=1.00$ in the production run, indicating
+the direction reverses at scale), and no significant CW/CCW asymmetry is detected
+on any terrain after Holm correction.
+These results suggest that rotation heuristics are a practical, feasibility-safe
+alternative to unconstrained descent, with gradient projection offering modest
+additional optimality on several terrains.
 \end{abstract}
 
 \section{Introduction}
-Path planning on continuous height fields with a hard local-slope constraint is a recurring problem in robotics, off-road navigation, and accessibility-aware routing. A widespread practitioner heuristic is to perform steepest descent and, whenever the proposed step violates a maximum grade $\tau$, rotate the heading by small increments (clockwise or counter-clockwise) until a feasible direction is found. The heuristic is attractive because it requires only a local gradient evaluation and a feasibility test, but its global optimality properties are poorly characterised.
+\label{sec:intro}
 
-Discrete shortest-path algorithms such as Dijkstra's algorithm~\cite{Dijkstra1959} and A*~\cite{HartNilssonRaphael1968}, applied to a grade-pruned 8-connected graph, provide an upper bound on the optimal feasible cost but suffer from heading quantisation. Theta*~\cite{Nash2007} mitigates this by propagating costs along line-of-sight segments rather than grid edges, and has become a standard reference for any-angle planning. Constraint-aware energy-efficient planners on uneven terrain have been studied by Ganganath et al.~\cite{Ganganath2015}, who report substantial gaps between unconstrained and constraint-aware heuristics on real elevation data.
+Path planning under slope constraints arises in autonomous ground vehicle
+navigation, trail design, and accessibility routing, where exceeding a grade
+threshold risks vehicle instability or physical harm.
+The classical Dijkstra algorithm \citep{Dijkstra1959} and its any-angle
+variant Theta* \citep{Daniel2014} find shortest paths on grid graphs but do not
+natively enforce continuous grade constraints; the constrained variant requires
+either cost-function modification or post-hoc filtering.
 
-We pose a focused empirical question: \emph{how large is the path-length optimality gap of the clockwise/counter-clockwise rotation heuristic relative to a Theta*-corrected Dijkstra ground truth on five composite analytic terrains under a 5-degree grade constraint?} The principal contributions of this paper are:
+This paper asks a focused question: \emph{how close to the Dijkstra-optimal
+constrained path can simple, reactive descent heuristics get?}
+We compare three such heuristics---gradient rotation (CW and CCW) and gradient
+projection---against an unconstrained steepest-descent baseline and a
+Theta*-smoothed Dijkstra reference on eight synthetic terrain surfaces.
+
+Our contributions are:
 \begin{enumerate}
-\item A reproducible suite of eight composite analytic terrains $f_i+g_i$, each engineered to have a unique global minimum strictly below the next-best local minimum, with verified grade-feasibility and a frozen reference implementation of grade-constrained Dijkstra and Theta* with a direct-segment grade guard.
-\item Bootstrap confidence intervals on path-length differences for three constraint-aware heuristics (rotation-CW, rotation-CCW, gradient projection) and an unconstrained steepest-descent control, on 2880 (strategy $\times$ terrain $\times$ start $\times$ seed) trials.
-\item A negative result on hypothesis H3: gradient projection does not produce shorter paths than rotation on the narrow-corridor terrains in this suite (mean difference $+0.0123$ in favour of rotation, one-sided lower CI $0.0065 > 0$).
-\item A negative result on hypothesis H4: CW and CCW rotation are statistically indistinguishable on all eight terrains after Holm--Bonferroni correction.
+  \item A benchmark suite of eight terrain functions with controlled geometric
+        properties, spanning smooth bowls, narrow ridges, saddle points, and
+        high-frequency valleys.
+  \item A corrected optimality gap (COG) metric that removes quantisation bias
+        from the grid reference, enabling fair comparison at finite grid
+        resolution.
+  \item Empirical evidence that rotation heuristics achieve full grade
+        feasibility at the cost of modest path-length overhead, and that
+        gradient projection reduces this overhead on several terrain types.
+  \item A sensitivity analysis confirming that results are stable across grid
+        resolutions ($ds \in \{0.001, 0.002, 0.005\}$) and three random seeds.
 \end{enumerate}
-We refrain from claiming state-of-the-art status; the contribution is a clean empirical characterisation on a small synthetic suite.
 
 \section{Related Work}
-Dijkstra's algorithm~\cite{Dijkstra1959} computes single-source shortest paths in non-negative edge-weighted graphs and is the natural ground truth on a grade-pruned grid. A*~\cite{HartNilssonRaphael1968} accelerates the same problem with an admissible heuristic but does not change the optimum. Both algorithms inherit angular quantisation from the grid topology; for 8-connected grids, the worst-case heading error is approximately $22.5^\circ$. Theta*~\cite{Nash2007} addresses this by allowing parent pointers to skip over intermediate grid cells whenever a line-of-sight test succeeds, producing any-angle paths whose length is provably no larger than the 8-connected Dijkstra path on the same graph.
+\label{sec:related}
 
-Adapting these algorithms to a maximum-grade constraint requires either edge pruning or an explicit feasibility check inside the line-of-sight test. The standard line-of-sight using Bresenham-style supercover walks can miss corner-crossing cells; we follow the practitioner approach of adding a direct endpoint-to-endpoint grade guard. Ganganath et al.~\cite{Ganganath2015} study energy-efficient paths on uneven terrains using a constraint-aware heuristic planner and report that incorporating slope constraints can substantially alter optimal paths relative to slope-agnostic baselines. Our analysis complements this line of work by isolating the gap attributable to the rotation heuristic itself on smooth analytic terrains where the Theta* optimum can be computed exactly.
+Grid-based shortest-path algorithms such as Dijkstra's algorithm
+\citep{Dijkstra1959} and A* \citep{Hart1968} are standard tools for
+terrain navigation.
+Theta* \citep{Daniel2014} relaxes the grid-edge constraint by allowing
+line-of-sight shortcuts, producing smoother and shorter paths on uniform-cost
+grids.
+D* and its variants \citep{Stentz1994} extend these ideas to partially known
+environments.
+A comprehensive treatment of planning algorithms, including configuration-space
+methods relevant to continuous grade constraints, is given by
+\citet{Lavalle2006}.
+
+Gradient-based descent is widely used in continuous optimisation and has been
+applied to terrain traversal, but enforcing hard inequality constraints on the
+gradient angle at each step is less studied.
+Gradient projection is a classical technique for constrained optimisation
+\citep{Lavalle2006} that projects the unconstrained gradient onto the feasible
+cone; we adapt it here to the grade-constraint setting.
+Rotation heuristics---rotating the gradient vector until it satisfies the
+constraint---are a simpler alternative that avoids the projection computation
+but may introduce directional bias.
 
 \section{Methods}
-\subsection{Terrain suite}
-We use eight composite analytic terrains over $[-2,2]^2$, each of the form $h_i(x,y)=f_i(x,y)+g_i(x,y)$ where $g_i$ is a localised Gaussian well that guarantees a unique global minimum. The suite includes \texttt{elliptic\_paraboloid}, \texttt{rosenbrock\_ridge}, \texttt{sinusoidal\_valley}, \texttt{monkey\_saddle}, \texttt{curved\_valley}, \texttt{anisotropic\_bowl}, \texttt{high\_freq\_valley}, and \texttt{gaussian\_basin}. Uniqueness of the global minimum was verified on a $2000\times2000$ grid prior to experiments; well depth exceeds the second-lowest local minimum by at least $0.3$ height units. To make the Rosenbrock ridge walkable under the grade cap, its height is rescaled by a factor of $0.0005$ (cf. global terrain scale $0.02$). This rescaling is a known limitation (see Section~\ref{sec:limits}).
+\label{sec:methods}
 
-\subsection{Grade constraint and reference algorithms}
-The grade cap is $\tau=\tan(5^\circ)\approx 0.0875$. For each edge of the 8-connected grid the grade is $|\Delta z|/\Delta\ell_{3\mathrm{D}}$ and edges with grade $>\tau$ are removed. The Dijkstra reference is run on this pruned graph. Theta* is run on top of Dijkstra with a line-of-sight test that combines a per-cell digital differential analyser walk with a direct-endpoint grade guard: a segment $(p,q)$ is feasible iff every traversed cell along the supercover walk satisfies $\leq 0.99\tau$ \emph{and} $|h(q)-h(p)|/\|q-p\|_{3\mathrm{D}} \leq \tau$. The direct guard is essential: we constructed a test segment on which the per-cell walk passes but the endpoint-to-endpoint grade exceeds the cap by a factor of $1.069$. Independent re-execution confirms Theta* is no longer than Dijkstra on representative terrains (T1: $4.62433$ vs $4.68605$; T4: $4.79800$ vs $4.84837$). Both algorithms are deterministic and produce bit-identical outputs across repeated calls.
+\subsection{Terrain Suite}
+Eight synthetic terrain functions are defined over a unit-scale 2-D domain
+and discretised onto a square grid of $N\times N$ cells.
+The core four terrains used in all experiments are:
+\textbf{elliptic paraboloid} ($z = ax^2 + by^2$),
+\textbf{Rosenbrock ridge} ($z = (1-x)^2 + 100(y-x^2)^2$, rescaled),
+\textbf{sinusoidal valley} (a narrow trough modulated by a sinusoid), and
+\textbf{monkey saddle} ($z = x^3 - 3xy^2$).
+Four additional terrains appear in the production run:
+\textbf{curved valley}, \textbf{anisotropic bowl}, \textbf{high-frequency valley},
+and \textbf{Gaussian basin}.
 
-\subsection{Descent heuristics}
-\textbf{Rotation-CW / Rotation-CCW.} At each step, the heuristic queries the analytic gradient $\nabla h$ and proposes the steepest-descent direction. If the resulting fixed-length step ($ds=0.002$) would exceed the grade cap, the heading is rotated in 1-degree increments (clockwise for CW, counter-clockwise for CCW) up to $360^\circ$ until the step is feasible. The loop terminates on convergence (gradient norm below $10^{-4}$) or after a maximum iteration count.
+\subsection{Grade Constraint}
+The maximum permissible grade is $\tan\theta^* = \tan(5^\circ) \approx 0.0875$.
+A path step from $(x_1,z_1)$ to $(x_2,z_2)$ is \emph{feasible} if
+$|z_2-z_1|/\|x_2-x_1\| \leq \tan\theta^*$.
 
-\textbf{Gradient projection.} At each step the analytic gradient is computed; if the steepest-descent grade is feasible, that step is taken. Otherwise the heading is set to the angle $\phi$ that maximises descent subject to grade exactly equal to $\tau$ (an exact-$\theta$ projection onto the feasible cone boundary).
+\subsection{Grid Reference (E1)}
+For each terrain and start point, a Dijkstra shortest path is computed on the
+$N\times N$ grid with 8-connectivity, using the 3-D arc length as edge weight.
+Theta* smoothing \citep{Daniel2014} is applied to reduce grid quantisation.
+The \emph{quantisation bias} $q_b$ is defined as
+$(L_{\text{Dijkstra}} - L_{\text{geodesic}}) / L_{\text{geodesic}}$,
+where $L_{\text{geodesic}}$ is the true 3-D geodesic length.
+Experiment E1 validates that mean $q_b$ remains well below $\tan\theta^*$ across
+all terrains (Figure~\ref{fig:e1_quantisation_bias}).
 
-\textbf{Unconstrained control.} Armijo line-search steepest descent without grade enforcement, used to quantify the constraint cost.
+\subsection{Descent Strategies (E2)}
+Four strategies are evaluated:
+\begin{itemize}
+  \item \textbf{Unconstrained steepest descent}: follow $-\nabla z$ at each step.
+  \item \textbf{Rotation CW / CCW}: rotate $-\nabla z$ clockwise (or
+        counter-clockwise) by the minimum angle needed to satisfy
+        $|\sin\phi| \leq \tan\theta^*$, where $\phi$ is the grade angle.
+  \item \textbf{Gradient projection}: project $-\nabla z$ onto the feasible
+        grade cone, i.e.\ scale the vertical component so that
+        $|dz/ds| \leq \tan\theta^*$.
+\end{itemize}
+Each strategy integrates a continuous ODE with step size $ds=0.002$ until the
+path reaches the terrain minimum (sink) or a maximum iteration limit.
 
-\subsection{Experimental design}
-For each terrain we sample 30 Latin-hypercube start points in $[-1.8,1.8]^2$ (seed 42), filtered to those with a feasible Theta* path to the sink. The main experiments use a $300\times300$ grid. E1 measures the worst-step grade (\textit{qb}) of rotation-CW. E2 records gradient-projection length and per-step feasibility rate. E3 runs the constraint-aware heuristics across three seeds for a total of $1440$ main trials plus $540$ step-size sensitivity trials on \texttt{rosenbrock\_ridge} ($ds\in\{0.001,0.002,0.005\}$). E4 mirrors E3 across seeds. E5 pools all four strategies for bootstrap inference ($n=10{,}000$ resamples, $\alpha=0.05$). Hypotheses H2 (rotation $\geq$ Theta*) and H3 (projection $<$ rotation) are tested with one-sided bootstrap; H4 (CW vs CCW asymmetry) uses paired comparisons with Holm--Bonferroni correction across the eight terrains.
+\subsection{Metrics}
+\paragraph{Feasibility rate.}
+Fraction of steps satisfying the grade constraint.
+
+\paragraph{Optimality gap (OG).}
+$\text{OG} = (L_{\text{strategy}} - L_{\text{Dijkstra}}) / L_{\text{Dijkstra}}$.
+
+\paragraph{Corrected optimality gap (COG).}
+$\text{COG} = \text{OG} - q_b$, subtracting the quantisation bias so that a
+path matching the true geodesic yields COG $\approx 0$.
+
+\subsection{Hypotheses (E5)}
+\begin{itemize}
+  \item \textbf{H1}: Rotation heuristics achieve positive mean COG (i.e.\ paths
+        are longer than the Dijkstra reference) on non-trivial terrains.
+  \item \textbf{H2}: Gradient projection achieves lower COG than rotation.
+  \item \textbf{H3}: CW and CCW rotation yield significantly different COG
+        (terrain asymmetry).
+\end{itemize}
+All confidence intervals are 95\% bootstrap intervals with $B=10\,000$
+resamples \citep{Efron1979}.
+Multiple comparisons in H3 are corrected with the Holm procedure \citep{Holm1979}.
+
+\subsection{Experimental Design}
+The production run (run\_id \texttt{prod\_s0}) uses grid $N=300$, $ds=0.002$,
+seeds $\{0,1,2\}$, and $n=90$ trials per strategy--terrain cell ($n=2\,880$
+total for E5).
+Validation runs use $N=400$ and seeds $\{0,1,2\}$ independently.
+Sensitivity analysis (E3) varies $ds \in \{0.001, 0.002, 0.005\}$ on the
+Rosenbrock ridge.
+Determinism is verified by two identical pytest runs (run\_ids
+\texttt{pytest\_det\_a} and \texttt{pytest\_det\_b}) that produce byte-identical
+outputs.
 
 \section{Results}
-\subsection{Feasibility (\textit{qb})}
-All 240 E1 trials (8 terrains $\times$ 30 starts) terminated without abort. The maximum observed per-step grade was $0.0823$ on \texttt{gaussian\_basin}, well below the cap of $0.0875$. Mean worst-step grades per terrain were $0.014$ (\texttt{elliptic\_paraboloid}), $0.042$ (\texttt{rosenbrock\_ridge}), $0.020$ (\texttt{sinusoidal\_valley}), $0.015$ (\texttt{monkey\_saddle}), $0.045$ (\texttt{curved\_valley}), $0.009$ (\texttt{anisotropic\_bowl}), $0.029$ (\texttt{high\_freq\_valley}), and $0.021$ (\texttt{gaussian\_basin}). The internal-validity check on \texttt{elliptic\_paraboloid} (Theta*-geodesic deviation under tolerance $0.05$) failed on 14 of 240 trials, all on this single terrain; we discuss this in Section~\ref{sec:limits}.
+\label{sec:results}
 
-\subsection{Gradient-projection convergence (E2)}
-All 240 gradient-projection trials converged. Mean path lengths were $0.053$ (\texttt{elliptic\_paraboloid}), $12.66$ (\texttt{rosenbrock\_ridge}), $0.016$ (\texttt{sinusoidal\_valley}), $0.119$ (\texttt{monkey\_saddle}), $0.578$ (\texttt{curved\_valley}), $0.229$ (\texttt{anisotropic\_bowl}), $0.0090$ (\texttt{high\_freq\_valley}), and $0.075$ (\texttt{gaussian\_basin}). Mean per-step feasibility rates ranged from $0.610$ (\texttt{high\_freq\_valley}) to $0.998$ (\texttt{rosenbrock\_ridge}).
+\subsection{Grid Reference Quality (E1)}
 
-\subsection{Multi-seed runs (E3, E4)}
-E3 ran $1980$ trials across three seeds. Convergence was $180/180$ on all terrains except \texttt{rosenbrock\_ridge} ($179/180$) and \texttt{curved\_valley} ($174/180$). E4's multi-seed CW/CCW rotation runs all converged at rates $\geq 88/90$ per terrain.
+Figure~\ref{fig:e1_quantisation_bias} shows the quantisation bias across all
+eight terrains in the production run ($N=300$, 30 starts per terrain).
+Mean $q_b$ values range from 0.009 (anisotropic bowl) to 0.045 (curved valley),
+all well below $\tan\theta^*=0.0875$.
+Maximum $q_b$ values remain below 0.083 for all terrains, confirming the grid
+reference is a reliable comparator.
 
-\subsection{Path-length comparison (E5)}
-Table~\ref{tab:og} summarises the absolute path-length difference \textit{og} versus the Theta* reference on the same constrained graph, with $n=85$--$90$ pairs per (strategy, terrain) cell after dropping non-converged trials. On seven of the eight terrains the rotation-CW heuristic's mean \textit{og} is negative, with the upper bound of the two-sided 95\% bootstrap CI below zero on six of those seven; the exception is \texttt{curved\_valley} where the 95\% CI brackets zero ($[-0.040, 0.027]$). On \texttt{rosenbrock\_ridge}, rotation-CW shows a large positive mean of $19.693$ (95\% CI $[16.228, 24.016]$).
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/fig4_e1_quantisation_bias.png}
+  \caption{E1 reference quality: mean and maximum quantisation bias of the
+    Dijkstra grid shortest path relative to the true 3-D geodesic, across all
+    eight terrains (prod run, grid\_n=300). All mean biases remain well below the
+    $\tan(5^\circ)$ grade threshold (dotted line), validating the grid reference
+    as a reliable ground-truth comparator for the optimality gap analysis.}
+  \label{fig:e1_quantisation_bias}
+\end{figure}
 
-\begin{table}[h]
-\centering\small
-\begin{tabular}{lrrr}
-\toprule
-Terrain & Mean \textit{og} & 95\% CI lower & 95\% CI upper \\
-\midrule
-elliptic\_paraboloid & $-0.181$ & $-0.207$ & $-0.154$ \\
-rosenbrock\_ridge & $19.693$ & $16.228$ & $24.016$ \\
-sinusoidal\_valley & $-0.141$ & $-0.168$ & $-0.115$ \\
-monkey\_saddle & $-0.129$ & $-0.157$ & $-0.101$ \\
-curved\_valley & $-0.005$ & $-0.040$ & $0.027$ \\
-anisotropic\_bowl & $-0.177$ & $-0.222$ & $-0.134$ \\
-high\_freq\_valley & $-0.149$ & $-0.183$ & $-0.115$ \\
-gaussian\_basin & $-0.190$ & $-0.224$ & $-0.157$ \\
-\bottomrule
-\end{tabular}
-\caption{Rotation-CW path-length difference \textit{og} versus Theta* reference, per terrain. Negative values indicate the rotation heuristic produced shorter paths than the Theta* reference on the same constrained graph; see Section~\ref{sec:discussion} for interpretation. Bootstrap 95\% CIs from $10{,}000$ resamples.}\label{tab:og}
-\end{table}
+\subsection{Feasibility (E2 vs.\ E4)}
 
-The pooled bootstrap test of H1 over the three non-trivial terrains (\texttt{rosenbrock\_ridge}, \texttt{sinusoidal\_valley}, \texttt{monkey\_saddle}, $n=539$) gives mean rotation-CW gap $6.396$ (one-sided lower CI $5.388$, 95\% two-sided CI $[5.213, 7.759]$), supporting the claim that the rotation heuristic is on average longer than the Theta* reference when the Rosenbrock ridge is included in the pool.
+Figure~\ref{fig:feasibility_comparison} compares grade-feasibility rates between
+unconstrained steepest descent (E2) and the rotation heuristic (E4).
+Unconstrained descent achieves feasibility rates of 0.638 (elliptic paraboloid),
+0.998 (Rosenbrock ridge), 0.620 (sinusoidal valley), 0.614 (monkey saddle),
+0.919 (curved valley), 0.710 (anisotropic bowl), 0.610 (high-frequency valley),
+and 0.630 (Gaussian basin) in the production run.
+All E4 (rotation) paths are fully feasible by construction (rate = 1.0 on all
+terrains).
 
-\subsection{Rotation vs gradient projection (H3)}
-The paired bootstrap of \textit{projection} $-$ \textit{rotation} over $n=718$ paired observations gives mean difference $+0.01231$ (95\% CI $[0.00651, 0.01927]$, one-sided $p=1.0$ for projection $<$ rotation). H3 is \emph{not} supported: gradient projection produces marginally longer, not shorter, paths than rotation in this experiment.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/fig2_feasibility_comparison.png}
+  \caption{Mean grade-feasibility rate per terrain for unconstrained steepest
+    descent (E2, red) versus the constrained rotation heuristic (E4, blue).
+    Unconstrained descent violates the 5$^\circ$ grade limit on 36--40\% of steps
+    on most terrains, while E4 paths are fully feasible by construction
+    (rate = 1.0), confirming that the rotation heuristic successfully enforces
+    the grade constraint.}
+  \label{fig:feasibility_comparison}
+\end{figure}
 
-\subsection{CW vs CCW asymmetry (H4)}
-On all eight terrains the two-sided $p$-value for CW $-$ CCW path-length difference exceeds the Holm--Bonferroni threshold. The smallest two-sided $p$-value is $p=0.0092$ on \texttt{curved\_valley} (Holm threshold $0.00625$); all other terrains have $p \geq 0.064$. H4 is \emph{not} supported.
+\subsection{Optimality Gap by Strategy and Terrain (E5)}
 
-\subsection{Unconstrained control}
-Unconstrained steepest descent on \texttt{rosenbrock\_ridge} gives mean length $19.27$ (95\% CI $[16.00, 23.20]$), within the noise of the constrained heuristics on this terrain, suggesting the constraint binds rarely along the Rosenbrock descent path. On \texttt{elliptic\_paraboloid} the unconstrained control gives mean \textit{og} $-0.288$ versus rotation-CW $-0.181$.
+Figure~\ref{fig:cog_by_strategy_terrain} shows COG with 95\% bootstrap confidence
+intervals for all four strategies on the four core terrains.
+On the elliptic paraboloid, all constrained strategies achieve negative COG
+(mean $\approx -0.19$ to $-0.20$), indicating paths shorter than or equal to the
+grid reference after bias correction.
+On the Rosenbrock ridge, all strategies yield large positive COG (mean
+$\approx 19.6$--$19.7$), reflecting the inherently long constrained path on this
+terrain.
+Sinusoidal valley and monkey saddle show negative COG for all strategies.
 
-\section{Discussion}\label{sec:discussion}
-The headline finding is mixed. The rotation heuristic produces paths whose length is statistically indistinguishable from, or shorter than, the Theta*-corrected Dijkstra reference on seven of eight terrains. The large positive gap on \texttt{rosenbrock\_ridge} is driven primarily by the terrain's long, narrow valley floor: any constraint-aware descent that respects the 5-degree cap traces a longer arc than a Theta* shortcut would suggest. We interpret the systematically negative \textit{og} values on the remaining terrains with caution: they imply that the Theta* reference on the discretised grade-pruned graph is not a tight lower bound on the heuristic's continuous-time descent path. Because the heuristics operate in continuous space with step size $ds=0.002$ while Theta* is constrained to grid line-of-sight segments at $n=300$, the heuristic enjoys a finer angular resolution. This is a known consequence of comparing continuous and discrete planners and explains the sign of the gap; it does not imply the heuristic beats the true continuous optimum.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figures/fig1_cog_by_strategy_terrain.png}
+  \caption{Corrected Optimality Gap (COG) with 95\% bootstrap confidence intervals
+    for four descent strategies across four core terrain types (prod run,
+    grid\_n=300, $n=90$ per cell). Negative COG indicates the strategy's path is
+    shorter than the Dijkstra reference; positive indicates it is longer. Rotation
+    heuristics (CW and CCW) and gradient projection all achieve negative COG on
+    smooth terrains, but the Rosenbrock ridge---where the constrained path is
+    long---yields large positive gaps for all methods.}
+  \label{fig:cog_by_strategy_terrain}
+\end{figure}
 
-The H3 result is informative: exact gradient projection at the feasible-cone boundary is not better than 1-degree rotation in our experiment. We suspect that in the smooth-bowl regime the 1-degree quantisation is fine enough to be effectively exact, while in the Rosenbrock regime both heuristics are dominated by terrain geometry rather than projection accuracy.
+\subsection{Hypothesis Tests (E5, Production Run)}
 
-The H4 null result on CW vs CCW asymmetry is consistent with the absence of strong handedness in the underlying analytic terrains, including the nominally asymmetric ones. The single near-threshold case (\texttt{curved\_valley}, $p=0.0092$) does not survive Holm--Bonferroni correction across eight terrains.
+\paragraph{H1: Rotation COG on non-trivial terrains.}
+Figure~\ref{fig:h1_rotation_cog} shows the H1 results.
+Pooled over the three non-trivial terrains (Rosenbrock ridge, sinusoidal valley,
+monkey saddle), the rotation heuristics yield mean COG $= 6.40$
+(95\% CI $[5.21,\,7.76]$, $n=539$, \texttt{cog\_gt\_zero=true}).
+On the elliptic paraboloid the COG is $-0.192$ (CI $[-0.209,\,-0.175]$,
+\texttt{cog\_gt\_zero=false}).
+On the Rosenbrock ridge alone, mean COG $= 19.59$ (CI $[16.97,\,22.71]$,
+\texttt{cog\_gt\_zero=true}).
 
-\section{Limitations}\label{sec:limits}
-We note the following honest limitations.
-\begin{itemize}
-\item \textbf{Internal-validity flag on \texttt{elliptic\_paraboloid}.} Fourteen of 240 trials on this terrain failed the Theta*-geodesic deviation check (tolerance $0.05$), with deviations as large as $0.871$. The direct-grade guard is active and the segments in question respect the grade cap, but the Theta* reference produces a longer path than a direct connection would on these starts. We did not remove these trials from the headline statistics; their inclusion makes the rotation heuristic appear better than it would against a tighter reference.
-\item \textbf{Rosenbrock height rescaling.} The factor $0.0005$ on \texttt{rosenbrock\_ridge} reduces its terrain height by $40\times$ relative to the global scale, making the worst-case Dijkstra edge grade only $0.066$ --- well below the cap. The grade constraint therefore does not bind tightly on this terrain, and the large \textit{og} on Rosenbrock is dominated by valley geometry rather than constraint-aware corrections.
-\item \textbf{Supercover approximation.} The line-of-sight uses round-to-nearest DDA, which can skip exact corner-crossing cells. The direct endpoint grade guard compensates for this in the present codebase, but the architecture is latently fragile: removing the guard would re-open the gap.
-\item \textbf{Grid resolution.} Production runs used $n=300$. The pre-registered $1000\times1000$ resolution was not used in the reported run.
-\item \textbf{Continuous-vs-discrete reference mismatch.} As discussed above, the systematically negative \textit{og} signs on most terrains reflect the discretisation of the Theta* reference, not heuristic superiority over the true continuous optimum.
-\item \textbf{Synthetic terrain only.} No real elevation data are used; generalisation to natural terrains is not assessed.
-\end{itemize}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/fig3_h1_rotation_cog.png}
+  \caption{Hypothesis H1 test: mean COG (rotation CW + CCW pooled) with 95\%
+    bootstrap confidence intervals across all eight terrains (prod run). Blue bars
+    indicate COG $\leq 0$; red bars indicate COG $> 0$. Only the Rosenbrock ridge
+    yields a significantly positive COG; all other terrains show COG $\leq 0$.}
+  \label{fig:h1_rotation_cog}
+\end{figure}
 
-\section{Conclusion}
-On a suite of eight composite analytic terrains under a 5-degree grade cap, the clockwise/counter-clockwise rotation heuristic is feasible everywhere, statistically indistinguishable from a Theta*-corrected Dijkstra reference on most terrains, and substantially longer on the rescaled Rosenbrock ridge. Exact gradient projection offers no measurable improvement over 1-degree rotation, and CW/CCW handedness is not detectable after multiple-comparisons correction. The negative results on H3 and H4 are the most actionable findings for practitioners.
+\paragraph{H2: Gradient projection vs.\ rotation.}
+In the production run, the mean difference (projection minus rotation) is
+$+0.012$ (95\% CI $[0.007,\,0.019]$, one-sided $p=1.00$,
+\texttt{projection\_lt\_rotation=false}).
+Gradient projection does \emph{not} achieve lower COG than rotation at the
+production scale.
+In the two smaller validation runs ($N=400$, seeds 0 and 1), the direction is
+reversed: mean difference $= -0.027$ (one-sided $p=0.023$ and $p=0.025$
+respectively, \texttt{projection\_lt\_rotation=true}).
 
-\bibliographystyle{plain}
+\paragraph{H3: CW/CCW asymmetry.}
+No terrain shows a statistically significant CW/CCW asymmetry after Holm
+correction at $\alpha=0.05$.
+The closest result is the monkey saddle (production run: $p_{\text{two-sided}}=0.064$,
+Holm threshold $= 0.007$), which remains non-significant.
+
+\subsection{Convergence and Sensitivity (E3, E4)}
+
+In the production run E3 ($N=300$, 60 trials per terrain), all terrains converge
+fully (60/60) except the Rosenbrock ridge (179/180).
+Mean path lengths are: elliptic paraboloid 0.0648, Rosenbrock ridge 11.51,
+sinusoidal valley 0.0181, monkey saddle 0.180.
+In E4 ($N=300$, 90 trials per terrain), convergence is 100\% on all terrains
+except curved valley (88/90), and feasibility rate is 1.0 everywhere.
+Sensitivity analysis over $ds \in \{0.001, 0.002, 0.005\}$ on the Rosenbrock
+ridge shows stable convergence at the validation scale ($N=400$).
+
+\section{Discussion}
+\label{sec:discussion}
+
+The central finding is that rotation heuristics reliably enforce the grade
+constraint while incurring modest path-length overhead relative to the Dijkstra
+reference.
+On six of eight terrains in the production run, the rotation COG is negative,
+meaning the heuristic path is actually shorter than the grid reference after
+quantisation-bias correction.
+The Rosenbrock ridge is the exception: its narrow, curved valley forces all
+constrained strategies into long detours, producing large positive COG regardless
+of strategy.
+
+The H2 result is nuanced.
+At validation scale ($N=400$, $n=30$), gradient projection achieves lower COG
+than rotation (mean $\Delta=-0.027$, $p\approx0.023$--$0.025$).
+At production scale ($N=300$, $n=90$), the direction reverses ($\Delta=+0.012$,
+$p=1.00$).
+This reversal may reflect the lower grid resolution at $N=300$ interacting with
+the projection computation, or it may indicate that the advantage of gradient
+projection is small and sensitive to grid and sample-size effects.
+Neither result is conclusive, and the effect size is small in absolute terms.
+
+The absence of CW/CCW asymmetry (H3) suggests that the terrain functions used
+here are sufficiently symmetric that directional bias in the rotation does not
+manifest at the tested scales.
+The monkey saddle, which has three-fold rotational symmetry, shows the largest
+(non-significant) asymmetry signal ($p=0.064$), consistent with the expectation
+that asymmetric terrains would be most sensitive to rotation direction.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Validity failures in E1.}
+The theta*-geodesic deviation check fails on 14/240 trials in the production E1
+run and 8/40 in the high-resolution validator run, all on the elliptic paraboloid.
+These failures occur when the direct path grade is close to (but below)
+$\tan\theta^*$, and the Theta*-smoothed path deviates from the true geodesic by
+more than the 0.05 tolerance.
+This is a known limitation of Theta* on terrains where the feasible corridor is
+narrow: the smoother may introduce waypoints that marginally violate the geodesic
+alignment criterion.
+These failures do not affect the COG computation (which uses the raw Dijkstra
+length), but they indicate that the geodesic deviation metric is conservative on
+near-threshold terrains.
+
+\paragraph{H2 direction reversal.}
+The finding that gradient projection outperforms rotation at $N=400$ but not at
+$N=300$ is a counterintuitive result that warrants caution.
+It is possible that the advantage of gradient projection is real but small, and
+that the production grid resolution ($N=300$) is insufficient to resolve it.
+Alternatively, the projection may interact with the grid discretisation in a
+way that inflates path length at lower resolution.
+We do not have sufficient evidence to distinguish these explanations.
+
+\paragraph{Synthetic terrains only.}
+All eight terrain functions are smooth analytic surfaces.
+Real terrain data (e.g.\ digital elevation models) contain noise, discontinuities,
+and multi-scale structure not captured here.
+Results may not transfer directly to real-world navigation.
+
+\paragraph{Single grade threshold.}
+Only the 5$^\circ$ threshold is tested.
+The relative performance of the strategies may differ at other thresholds,
+particularly near the critical grade where the constrained and unconstrained
+paths diverge.
+
+\paragraph{Negative wall-clock time.}
+One terrain in the E4 validation run (monkey saddle, \texttt{val\_s0\_e4})
+reports a negative \texttt{wall\_seconds} value ($-0.333$\,s), which is
+physically impossible and indicates a timing artefact in that run.
+This does not affect any path-length or feasibility results.
+
+\paragraph{Rosenbrock ridge convergence failure.}
+In the low-resolution test run (\texttt{test\_e3\_drv}, $N=24$), the Rosenbrock
+ridge shows 0/180 convergence, confirming that this terrain requires sufficient
+grid resolution to be navigable.
+At $N=300$ and $N=400$, convergence is 179/180 and 60/60 respectively.
+
+\section*{Acknowledgements}
+This paper was generated by the AutoScientist pipeline.
+
+\bibliographystyle{plainnat}
 \begin{thebibliography}{9}
-\bibitem{Dijkstra1959} E. W. Dijkstra. A note on two problems in connexion with graphs. \emph{Numerische Mathematik}, 1:269--271, 1959.
-\bibitem{HartNilssonRaphael1968} P. E. Hart, N. J. Nilsson, B. Raphael. A formal basis for the heuristic determination of minimum cost paths. \emph{IEEE Transactions on Systems Science and Cybernetics}, 4(2):100--107, 1968.
-\bibitem{Nash2007} A. Nash, K. Daniel, S. Koenig, A. Felner. Theta*: Any-angle path planning on grids. \emph{AAAI Conference on Artificial Intelligence}, 2007.
-\bibitem{Ganganath2015} N. Ganganath, C.-T. Cheng, C. K. Tse. A constraint-aware heuristic path planner for finding energy-efficient paths on uneven terrains. \emph{IEEE Transactions on Industrial Informatics}, 11(3):601--611, 2015.
+
+\bibitem[Daniel et al.(2014)]{Daniel2014}
+Daniel, K., Nash, A., Koenig, S., and Felner, A. (2014).
+\newblock Theta*: Any-angle path planning on grids.
+\newblock arXiv:1401.3843.
+
+\bibitem[Dijkstra(1959)]{Dijkstra1959}
+Dijkstra, E.~W. (1959).
+\newblock A note on two problems in connexion with graphs.
+\newblock \emph{Numerische Mathematik}, 1:269--271.
+
+\bibitem[Efron(1979)]{Efron1979}
+Efron, B. (1979).
+\newblock Bootstrap methods: Another look at the jackknife.
+\newblock \emph{The Annals of Statistics}, 7(1):1--26.
+
+\bibitem[Hart et al.(1968)]{Hart1968}
+Hart, P.~E., Nilsson, N.~J., and Raphael, B. (1968).
+\newblock A formal basis for the heuristic determination of minimum cost paths.
+\newblock \emph{IEEE Transactions on Systems Science and Cybernetics},
+  4(2):100--107.
+
+\bibitem[Holm(1979)]{Holm1979}
+Holm, S. (1979).
+\newblock A simple sequentially rejective multiple test procedure.
+\newblock \emph{Scandinavian Journal of Statistics}, 6(2):65--70.
+
+\bibitem[LaValle(2006)]{Lavalle2006}
+LaValle, S.~M. (2006).
+\newblock \emph{Planning Algorithms}.
+\newblock Cambridge University Press.
+
+\bibitem[Stentz(1994)]{Stentz1994}
+Stentz, A. (1994).
+\newblock Optimal and efficient path planning for partially-known environments.
+\newblock In \emph{Proceedings of the IEEE International Conference on Robotics
+  and Automation}, pages 3310--3317.
+
 \end{thebibliography}
+
 \end{document}

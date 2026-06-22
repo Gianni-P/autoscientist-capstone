@@ -22,7 +22,8 @@ well-posed numerical-optimization study.)
 |---|---|
 | `src/` | The implementation (16 modules): `terrains.py`, `strategies.py`, `graph.py`, `grid_search.py`, the Theta\*/Dijkstra reference, and the E0–E5 experiment drivers. Pure NumPy/SciPy, no external data. |
 | `tests/` | 25 test modules — grade-constraint enforcement, reference-construction gates, determinism, gap-decomposition consistency, supercover/LOS checks, per-experiment pitfalls. |
-| `paper/` | The draft paper (`paper.pdf`, `paper.tex`). |
+| `paper/` | The draft paper (`paper.pdf`, `paper.tex`) and `paper/figures/` — the four result figures embedded in the PDF, with a `figures.json` of captions. |
+| `scripts/` | `generate_figures.py` — the script that renders the paper's figures from the run's result summaries. |
 | `results/` | The aggregate result summaries (`E1`–`E5_summary.json`) — the real per-terrain numbers the paper draws on. |
 | `conftest.py` | pytest fixtures. |
 

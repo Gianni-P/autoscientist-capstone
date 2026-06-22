@@ -1,4 +1,4 @@
-# autoscientist
+# <img src="src/autoscientist/web/static/logo.svg" alt="" height="28" align="middle"> autoscientist
 
 Multi-agent research pipeline that produces academic papers, supplementary materials, and reproducible code repositories from high-level research directions in scoped domains.
 

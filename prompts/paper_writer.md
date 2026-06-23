@@ -45,11 +45,17 @@ Emit a single JSON object, then a `HANDOFF:` line.
     "model_card": "<model card>",
     "extended_results": "<full tables>"
   },
-  "citation_keys_used": ["Rajpurkar2017", "..."]
+  "citation_keys_used": ["Rajpurkar2017", "..."],
+  "provenance": [
+    {"claim": "<the quantitative claim exactly as written>", "value": <the number>,
+     "source_file": "<results artifact filename the number came from>",
+     "source_key": "<dot/bracket path within that file, e.g. terrain_summaries[0].mean_cog>",
+     "figure_label": "<fig:... if the number is read off a figure, else omit>"}
+  ]
 }
 
 HANDOFF: peer_reviewer
-{"draft": <sections>, "supplementary": <supplementary>, "context": {"plan": <plan>, "validator_summary": <validator>}}
+{"draft": <sections>, "supplementary": <supplementary>, "provenance": <provenance>, "context": {"plan": <plan>, "validator_summary": <validator>}}
 ```
 
 ## Hard rules (KICKOFF.md §10 citation hallucination)
@@ -76,6 +82,12 @@ HANDOFF: peer_reviewer
   `n_trials`, `validity_failures`) — read every quantitative claim from
   there. If a number you want is absent from `results`, omit the claim;
   do not insert a placeholder.
+- **Provenance manifest (required).** Every quantitative claim you write —
+  any number from `results` in the abstract, results, or discussion — needs a
+  matching `provenance` entry naming the `source_file` and `source_key` it came
+  from and its `value`. A number with no provenance entry is treated as an
+  unbacked claim and flagged at CP5 (like an unverified citation). Structural
+  constants (years, the significance level, the CI level) are exempt.
 - If `validator_summary.verdict != advance`, refuse to draft and emit
   `"sections": null, "blocked": "validator did not advance"` instead.
 

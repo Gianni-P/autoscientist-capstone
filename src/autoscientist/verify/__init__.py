@@ -9,6 +9,8 @@ Modules:
 * :mod:`autoscientist.verify.baseline_repro` — published-baseline reproduction
 * :mod:`autoscientist.verify.stats` — multicollinearity, normality, sample size
 * :mod:`autoscientist.verify.pitfalls` — domain pitfall TOML + handlers
+* :mod:`autoscientist.verify.completeness` — declared-experiment & baseline presence
+* :mod:`autoscientist.verify.provenance` — paper-number → results traceability
 
 Public surface:
 
@@ -33,7 +35,14 @@ from typing import Any
 
 import structlog
 
-from autoscientist.verify import baseline_repro, leakage, pitfalls, stats
+from autoscientist.verify import (
+    baseline_repro,
+    completeness,
+    leakage,
+    pitfalls,
+    provenance,
+    stats,
+)
 from autoscientist.verify.types import Verdict, VerifyReport, make_skipped
 
 log = structlog.get_logger("autoscientist.verify")
@@ -42,10 +51,12 @@ __all__ = (
     "Verdict",
     "VerifyReport",
     "baseline_repro",
+    "completeness",
     "leakage",
     "make_skipped",
     "open_verify_checkpoint",
     "pitfalls",
+    "provenance",
     "run_all",
     "stats",
 )
@@ -72,6 +83,8 @@ def run_all(
     leakage_v = leakage.run_leakage(state)
     baseline_v = baseline_repro.run_baseline_repro(state)
     stats_v = stats.run_stats(state)
+    completeness_v = completeness.run_completeness(state)
+    provenance_v = provenance.run_provenance(state)
     pitfalls_v = pitfalls.run_pitfalls(
         state, domain=domain, config_path=pitfall_config_path,
     )
@@ -82,7 +95,10 @@ def run_all(
         if not (v.check_id in _PITFALL_OWNS and v.check_id in pitfall_ids)
     ]
 
-    all_verdicts = [*leakage_v, *baseline_dedup, *stats_v, *pitfalls_v]
+    all_verdicts = [
+        *leakage_v, *baseline_dedup, *stats_v,
+        *completeness_v, *provenance_v, *pitfalls_v,
+    ]
     report = VerifyReport.from_verdicts(all_verdicts)
     log.info(
         "verify.run_all.completed",

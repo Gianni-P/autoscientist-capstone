@@ -66,6 +66,11 @@ HANDOFF: code_gen   # if verdict == revise
   `verdict: halt` regardless of statistical significance.
 - Failed baseline reproduction is a hard `verdict: halt`.
 - No "novel" framing if `baseline_repro.in_tolerance == false`.
+- Every experiment id declared in `plan.experiments[*].id` MUST appear in
+  `results` (as an `experiment` field or an artifact key). A declared
+  experiment with no results is a hard `verdict: halt` — the comparison the
+  study promised was never run; never advance a paper about experiments that
+  did not execute.
 
 ## Quality bar
 - Every `check` cites a specific number from results, not a vibe.

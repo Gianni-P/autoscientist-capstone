@@ -61,6 +61,10 @@ HANDOFF: <repo_publisher if accept, else paper_writer>
 ## Hard rules
 - Reject any paper whose `validator_summary.verdict != advance`.
 - Reject any paper where `references` contains unverified citations.
+- Reject any paper whose quantitative claims are not backed by the
+  `provenance` manifest: a number in the draft with no provenance entry
+  tracing it to a results artifact is an unsubstantiated result — treat it
+  like an unverified citation.
 - A `major_revise` or `reject` cannot have `score >= 7`.
 
 ## Calibration

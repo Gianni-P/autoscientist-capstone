@@ -83,6 +83,68 @@ The harness wrapped around that pipeline:
 
 These map to the 7-pillar security architecture and HITL/eval framing from Days 4–5, the harness/orchestrator model from Day 1, and the MCP interoperability of Day 2. See [`WRITEUP.md`](WRITEUP.md) for the full mapping.
 
+## Related work & how autoscientist differs
+
+Autonomous "research agent" systems are a crowded, fast-moving space.
+autoscientist sits in the **full-pipeline** category — *research direction →
+paper + reproducible code repo* — but it optimises for a different axis than
+most: the **safety / governance envelope**, rather than autonomy or throughput.
+
+**Closest comparables** (all actively developed):
+
+| System | What it is | Paper + code? | Human gates | Safety envelope |
+|---|---|---|---|---|
+| [**AI-Researcher**](https://arxiv.org/abs/2505.18705) (HKU) | Full six-stage pipeline → paper + repo; the nearest neighbour | both | fully autonomous | Docker sandbox only |
+| [**Agent Laboratory**](https://arxiv.org/abs/2501.04227) / [AgentRxiv](https://arxiv.org/abs/2503.18102) (AMD + JHU) | Academic-lab personas → paper + code | both | *optional* co-pilot | minimal |
+| [**The AI Scientist**](https://arxiv.org/abs/2408.06292) v1 / [v2](https://arxiv.org/abs/2504.08066) (Sakana) | Full loop + a *self-generated* peer review | both | autonomous | **opt-in** sandbox |
+| [**data-to-paper**](https://arxiv.org/abs/2404.17605) (Technion) | Data → paper with backward-traceable numbers | both | autopilot / copilot | stats guardrails, no sandbox |
+| [**Curie**](https://arxiv.org/abs/2502.16069) (U-Michigan) | Execution-rigor engine (no lit review, no paper) | code only | autonomous | **mandatory** Docker + validators |
+
+Adjacent partial-pipeline systems include
+[The Virtual Lab](https://www.nature.com/articles/s41586-025-09442-9)
+(Stanford, *Nature* 2025), [SciAgents](https://arxiv.org/abs/2409.05556) (MIT),
+and [ResearchAgent](https://arxiv.org/abs/2404.07738) (KAIST). The commercial
+frontier — [Google's AI co-scientist](https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/),
+FutureHouse / Edison's **Kosmos**, **Lila Sciences**, **Periodic Labs** — is far
+better resourced but sells autonomy and throughput ("six months of work in a
+day"), and is mostly hypothesis-generation or closed-source.
+
+**What's distinctive here.** Across that survey, no other full-pipeline
+*paper-and-repo* system bundles all four of these into the core design:
+
+* **A real budget circuit-breaker** — a monthly hard cap enforced race-free by
+  reserving the estimated charge *before* each call. Others cap *steps* at most;
+  a dollar-cap breaker appears unique among the systems surveyed.
+* **Multiple _mandatory_ human-in-the-loop gates** — others offer *optional*
+  co-pilot modes; required checkpoints as the default are not standard.
+* **A sandboxed `execute`** (CPU/mem/time caps, network blocked, argv-allowlist)
+  — shared with AI-Researcher and Curie, but *opt-in* in Sakana, whose own paper
+  documents the agent rewriting its code to relaunch itself and to extend its own
+  timeouts (the strongest external argument for this design).
+* **Deterministic leakage / baseline / statistics checks plus static import
+  verification** in a paper-writing pipeline — pieces of this live in Curie and
+  data-to-paper, but not bundled into a full direction→paper system.
+
+This governance-first stance is not a fringe position: it mirrors where
+integrity-focused researchers are pushing the field — e.g.
+[EviBound](https://arxiv.org/abs/2511.05524)'s approval + verification gates
+("research integrity is an architectural property … achieved through governance
+gates rather than emergent from model scale"), the
+["Hidden Pitfalls of AI Scientist Systems"](https://arxiv.org/abs/2509.08713)
+audit (data leakage, metric misuse, post-hoc selection bias), and Stanford's
+[Agents4Science](https://agents4science.stanford.edu/) venue.
+
+**Where others lead — stated honestly.** autoscientist is not the most capable
+or polished system in this space. The funded labs have orders of magnitude more
+capital and *wet-lab-validated* discoveries; Sakana, AI-Researcher, and the
+Virtual Lab have far more adoption, citations, and independent reproduction; and
+data-to-paper's click-traceable numbers and Kosmos's conclusion-to-code links
+are more advanced on output traceability specifically. autoscientist competes on
+none of those. What it offers instead is the combination the rest of the field
+is racing past: a **safety-harness-first, human-gated** pipeline whose primary
+output is not a paper but the **trust envelope** that makes an
+autonomously-produced paper *and* a reproducible repo worth acting on.
+
 ## Quickstart (operator)
 
 ```bash

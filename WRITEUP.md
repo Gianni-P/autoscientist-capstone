@@ -105,7 +105,7 @@ The code is heavily commented at the level of *why* — most non-obvious guards 
 
 ## Verification & evaluation
 
-The course splits trust into two axes — **security** (did the agent stay in bounds?) and **evaluation** (is the result worth shipping?) — and autoscientist implements both. Beyond an LM-judge agent scored against per-agent rubrics (`meta/eval_rubrics.py`) and prompt versioning / A-B harness, a dedicated `verify/` package runs **deterministic** gates the model cannot argue with: data-leakage detection, baseline-reproduction tolerance checks, statistical-validity checks, and domain-specific pitfall handlers. A `test_gen` agent writes AI-generated test coverage *targeting the methodology's pitfalls* before code is accepted — programmatic confidence wired in as a gate, not an afterthought. The project ships **363 passing unit tests**.
+The course splits trust into two axes — **security** (did the agent stay in bounds?) and **evaluation** (is the result worth shipping?) — and autoscientist implements both. Beyond an LM-judge agent scored against per-agent rubrics (`meta/eval_rubrics.py`) and prompt versioning / A-B harness, a dedicated `verify/` package runs **deterministic** gates the model cannot argue with: data-leakage detection, baseline-reproduction tolerance checks, statistical-validity checks, domain-specific pitfall handlers, **experiment-completeness** checks (a plan-declared experiment with no result artifact halts the pipeline — the failure mode that lets a system write a paper about experiments it never ran), and **claim-provenance / claim-verification** (every quantitative claim in the paper must trace to a value in a cited results artifact). A `test_gen` agent writes AI-generated test coverage *targeting the methodology's pitfalls* before code is accepted — programmatic confidence wired in as a gate, not an afterthought. The project ships **384 passing unit tests**.
 
 ## Result: a real end-to-end deliverable
 
@@ -120,7 +120,7 @@ The flagship run reworked an undergraduate study, *"Limited Descent: The Use of 
 ## Reproduce & links
 
 - **Code:** the public repository, with full setup in `README.md`, including a one-line **GPU-free** configuration (route the code agents to a hosted model).
-- **Quick verification with no spend and no GPU:** the phase smoke tests run the whole substrate against a deterministic mock provider; `pytest` runs all 363 unit tests.
+- **Quick verification with no spend and no GPU:** the phase smoke tests run the whole substrate against a deterministic mock provider; `pytest` runs all 384 unit tests.
 - **Concept mapping:** `WRITEUP.md` (this document) and the README's "Course concepts demonstrated" table point at the exact files.
 
 autoscientist is the disciplined end of the vibe-coding spectrum: a system whose primary output is not code, but the harness that produces trustworthy science.

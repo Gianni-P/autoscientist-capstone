@@ -66,7 +66,8 @@ The harness wrapped around that pipeline:
   tools     sandboxed execute · check_imports · write_file · literature ·
             latex_compile · citation_check · GitHub MCP
      │
-  safety    5 HITL checkpoints · budget circuit-breaker · verify/ harness · LM judge
+  safety    5 HITL checkpoints · budget circuit-breaker · verify/ gates (leakage ·
+            baseline · stats · completeness · provenance) · LM judge
      │
   state     SQLite (runs · messages · checkpoints · budget ledger) ·
             per-run JSONL traces · live SSE web console
@@ -78,7 +79,7 @@ The harness wrapped around that pipeline:
 |---|---|---|
 | **Agent / Multi-agent system** | Code | 12-agent handoff topology (`runtime/runner.py`, `agents/`), including a `figure_gen` step that renders the paper's figures from the results, + an Opus-orchestrator that delegates file-writing to a local worker (`runtime/orchestration.py`) |
 | **MCP server** | Code | GitHub MCP publishing via a sync↔MCP bridge over **stdio + remote HTTP/SSE**, scoped & graceful-degrading (`clients/mcp_bridge.py`, `config/mcp.toml`) |
-| **Security features** | Code | Sandboxed `execute` (CPU/mem/time caps, network blocked, argv-allowlist), monthly **budget circuit-breaker** (reserve-before-call), 5 HITL checkpoints, static `check_imports`, path-traversal guards |
+| **Security features** | Code | Sandboxed `execute` (CPU/mem/time caps, network blocked, argv-allowlist), monthly **budget circuit-breaker** (reserve-before-call), 5 HITL checkpoints, static `check_imports`, deterministic `verify/` gates incl. **experiment-completeness** (a declared experiment with no results halts) and **claim-provenance** (every paper number must trace to a results artifact), path-traversal guards |
 | **Deployability** *(bonus)* | Code/Video | Detached runner process + Starlette/SSE web console; one-line config to run cloud-only (see below) |
 
 These map to the 7-pillar security architecture and HITL/eval framing from Days 4–5, the harness/orchestrator model from Day 1, and the MCP interoperability of Day 2. See [`WRITEUP.md`](WRITEUP.md) for the full mapping.

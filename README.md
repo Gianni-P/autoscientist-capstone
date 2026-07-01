@@ -431,8 +431,8 @@ reproducible code repo.
   optimization-specific pitfall handlers (feasibility-at-every-step, bounded
   descent, well-defined target, gradient validation, optimality-gap reporting,
   step-discretization sensitivity).
-* **Deliverables.** Compiled paper at
-  `projects/math693a-limited-descent/latex/paper/paper.pdf` and a self-contained
+* **Deliverables.** Compiled, figure-bearing paper at
+  `projects/math693a-limited-descent/release/paper/paper.pdf` and a self-contained
   reproducible repo under `projects/math693a-limited-descent/release/`
   (`src/` + ~30 `tests/` + `results/E1–E5_summary.json` + `paper/`, incl. the
   four result figures + `scripts/generate_figures.py`).
@@ -444,3 +444,29 @@ reproducible code repo.
   model for the next leg — route it to a local `qwen3.6:27b` worker via Ollama
   (≈ $0) or to the Opus-4.8 orchestrator — from the console's per-leg model
   picker.
+
+## Second deliverable — `california-cancer-ocean` (real public-health data)
+
+A second end-to-end run, this time on **real observational data**, to show the
+harness on a genuinely messy problem rather than a self-contained simulation.
+Across California's 542 Medical Service Study Areas it asks whether **distance to
+the Pacific Ocean** predicts age-adjusted cancer incidence once pollution
+(CalEnviroScreen 4.0), socioeconomic status, smoking, screening access, race
+composition, and urbanicity are controlled for — using a **pre-specified
+negative-control falsification** design (Prostate / Breast / Uterine as
+biologically implausible controls), XGBoost + SHAP for descriptive feature
+importance, and HC3-robust weighted regression with Holm multiplicity control
+and a Moran's *I* residual-spatial-autocorrelation diagnostic.
+
+The honest finding: after adjustment the crude coastal gradients largely vanish,
+the negative-control comparison is consistent with residual confounding, and
+distance-to-ocean is **not** a credible standalone exposure proxy for
+site-specific cancer risk (Kidney and Thyroid the interpretable exceptions). The
+deliverable is `projects/california-cancer-ocean/latex/paper/paper.pdf` (+ four
+figures), built by the same pipeline; the merged analysis dataset is staged
+locally and kept out of git. The run also motivated two small harness fixes now
+in the code: an **early-chain forward fallback** so a token-truncated
+`lit_review` (or any pre-CP1 agent that omits its `HANDOFF:` line) can no longer
+dead-end a run before the first checkpoint, and a **dataset-layout hint** so a
+pre-staged local CSV surfaces its absolute path to `code_gen` instead of
+reporting "no data."

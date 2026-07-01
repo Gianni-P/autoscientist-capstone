@@ -88,3 +88,15 @@ projects/*/_archive_*/
 *.synctex.gz
 *.bbl
 *.blg
+
+# Local Kaggle-submission prep + one-off scratch (mirrors CAPSTONE.md above):
+# the graded report is WRITEUP.md. These are the local video script, the
+# slide-deck generation prompt, a stray operator instruction note, and a local
+# demo-serve helper — none are part of the published project.
+VIDEO_SCRIPT.md
+PRESENTATION_PROMPT.md
+/.cp_instr.txt
+/_serve_demo.sh
+# Redundant screenshot archives — the individual PNGs under docs/screenshots/
+# are tracked; the .zip bundles are duplicates.
+*.zip

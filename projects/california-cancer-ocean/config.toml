@@ -1,0 +1,75 @@
+# Per-project configuration for california-cancer-ocean.
+#
+# A REAL-DATA observational (ecological) epidemiology study, created 2026-06-24.
+# Research question (from the operator's Project Description): does proximity to
+# the Pacific Ocean explain any of the geographic variation in California cancer
+# incidence ONCE pollution is controlled for — by pruning to low/similar-pollution
+# MSSAs and by covariate adjustment? Tested per cancer site and for all-cancer
+# (AllSite) with XGBoost (+ SHAP / permutation importance) and classical
+# statistics (multivariable regression with 95% CIs, stratified coastal-vs-inland
+# comparisons).
+#
+# Data are PRE-STAGED locally (no fetch): see projects/california-cancer-ocean/
+# data/analysis_dataset.csv (built by data/prepare_dataset.py) and
+# data/data_dictionary.md. 13 cancer sites x 542 MSSAs x {Both,Female,Male},
+# 10-year age-adjusted incidence rates (AAIR), joined to CalEnviroScreen 4.0
+# pollution metrics, demographics, smoking, area, and a derived
+# distance_to_ocean_km.
+#
+# Layers on top of config/default.toml and config/models.toml.
+
+[project]
+id = "california-cancer-ocean"
+domain = "environmental_epidemiology"
+description = "Across California's 542 Medical Service Study Areas, does proximity to the Pacific Ocean (distance_to_ocean_km) account for any geographic variation in age-adjusted cancer incidence (AAIR) — for all-cancer and for each of 13 cancer sites — AFTER controlling for air/other pollution (CalEnviroScreen 4.0), smoking, socioeconomic status, screening access and urbanicity, both by pruning to low/similar-pollution MSSAs and by covariate adjustment? Quantify the contribution of distance-to-ocean with XGBoost (SHAP + permutation importance) and with classical multivariable regression (effect size, 95% CI, p), as an ecological association (not individual-level causation)."
+kickoff_payload_path = "projects/california-cancer-ocean/kickoff_payload.json"
+
+[budget]
+# Per-project soft cap (separate from the monthly hard cap in models.toml).
+# Code/test/figure legs are intended to run as Opus-orchestrator (Opus 4.8
+# manager + local qwen3.6:27b worker, ~$0 bulk emission); the science/writing
+# agents are Sonnet/Opus. The single shared codebase loops over all 13 cancers,
+# so code cost does NOT scale with the number of sites.
+project_soft_cap_usd = 45.0  # 2026-06-24: raised 25 -> 45 mid-run; the CP3 code leg (orchestrator Opus manager + code_review's piecewise validation) cost ~$20, so 25 would halt before CP4/CP5. 45 lets the run finish ~$243 lifetime, safely under the $280 monthly cap.
+
+[verify]
+# Resolves to config/domains/environmental_epidemiology.toml.
+domain = "environmental_epidemiology"
+
+[datasets]
+# Pre-staged LOCAL CSV (NOT a registry/imaging archive, NOT fetched in-sandbox).
+# The name resolves to a layout entry in runtime/project_context.py that gives
+# the absolute path. The methodology/code agents must NOT call dataset_fetch and
+# must NOT recompute distance_to_ocean_km (it is already in the file).
+allowed = ["california_cancer_ocean"]
+
+[experiment.defaults]
+# Defaults the methodology/code agents should anchor on unless they argue otherwise.
+unit_of_analysis = "MSSA (ecological; associations are area-level, not individual)"
+outcome = "AAIR (age-adjusted incidence rate per 100k, 10-year window)"
+primary_exposure = "distance_to_ocean_km"
+exposure_alt_forms = ["coastal_20km", "coastal_50km", "dist_band"]
+cancers = ["AllSite", "Breast", "CRC", "Kidney", "Liver", "Lung", "Lymph", "Mela", "Pancreas", "Prostate", "Thyroid", "Urinary", "Uterine"]
+sex_strata = ["Both", "Female", "Male"]
+pollution_controls = ["CES_PM2.5", "CES_Ozone", "CES_Diesel_PM", "CES_Traffic", "CES_Pollution_Burden", "CES_Drinking_Water", "CES_Tox._Release", "CES_Haz._Waste"]
+other_confounders = ["PerSmoking", "QNSES", "PerRural", "PopAll", "MSSA_Area_SqMi", "PerWhite", "PerBlack", "PerAsian", "PerHispanic", "PerForeignBorn"]
+screening_confounders = ["PerMammo", "PerFOBT", "PerDocVisit"]
+leakage_exclude = ["LCI", "UCI", "White_AAIR", "Black_AAIR", "Hispanic_AAIR", "Asian_AAIR", "CES_Asthma", "CES_Cardiovascular_Disease", "CES_Low_Birth_Weight", "Latitude", "Longitude"]
+methods = ["xgboost_regression_with_shap", "permutation_importance", "multivariable_ols_wls_regression", "low_pollution_stratified_comparison", "coastal_vs_inland_tests"]
+rate_weighting = "weight by PopTot or 1/CI-width; flag/exclude unstable rates (very wide LCI-UCI)"
+n_seeds = 5
+cv_folds = 5
+external_validation = "geographic hold-out (e.g., train Southern CA, test Northern CA) and/or sex-strata transfer"
+primary_outputs = ["distance_effect_size_per_100km", "distance_95pct_CI", "distance_shap_importance_rank", "low_pollution_subset_effect"]
+robustness = ["sensitivity to distance threshold + binning", "spatial autocorrelation acknowledged/tested", "with vs without pollution adjustment"]
+max_runtime_minutes = 30
+
+[checkpoints]
+# All five HITL checkpoints are mandatory; the runtime enforces this.
+mandatory = [
+    "idea_selection",
+    "methodology_approval",
+    "preliminary_review",
+    "full_results_validation",
+    "draft_review",
+]

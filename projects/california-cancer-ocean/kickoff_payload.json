@@ -1,0 +1,43 @@
+{
+  "direction": "Using a pre-staged California dataset at MSSA (Medical Service Study Area) level, determine whether PROXIMITY TO THE PACIFIC OCEAN explains any of the geographic variation in age-adjusted cancer incidence (AAIR) once POLLUTION is controlled for. This is the operator's Project Description: prune to low-pollution / similar-pollution MSSAs (using CalEnviroScreen 4.0 metrics - composite pollution burden plus components such as PM2.5, ozone, diesel, traffic, toxic release, hazardous waste, drinking-water and cleanup-site indicators) and then compare cancer rates against distance from the ocean, optionally binarized to 'close to ocean' vs 'far from ocean'. Do this for ALL-cancer (the AllSite site) and for EACH of the 13 cancer sites separately. Quantify the contribution of distance-to-ocean two complementary ways: (1) XGBoost regression of AAIR on distance_to_ocean_km plus the pollution and demographic covariates, with SHAP values and permutation importance to isolate how much distance contributes over and above pollution; and (2) classical multivariable regression (OLS/WLS, weighted toward MSSAs with stable rates) reporting the distance coefficient, its 95% confidence interval and p-value, both crude and pollution-adjusted, plus the stratified low-pollution-subset comparison the Project Description asks for. The honest expected finding is that any raw coastal-vs-inland incidence gap is largely confounded by urbanicity, smoking, socioeconomic status, screening access and pollution; the scientific contribution is to measure how much of the distance signal SURVIVES adjustment, for which cancers, and in which direction. Treat this strictly as an ECOLOGICAL association study (area-level, not individual-level), report a null or attenuated effect as a legitimate result, and flag any cancer where distance remains a strong predictor after full adjustment as a counterintuitive finding requiring interpretation.",
+  "context": {
+    "domain": "environmental_epidemiology",
+    "task": "ecological_association_cancer_incidence_vs_distance_to_ocean_controlling_for_pollution",
+    "origin": "Operator-provided real-data study (2026-06-24) from California Health Maps (cancer incidence by MSSA) + CalEnviroScreen 4.0 (pollution). Data are already merged and staged locally; a geographic exposure (distance_to_ocean_km) has been derived by the operator. The pipeline performs the statistics, not the data engineering.",
+    "constraints": {
+      "compute": "Pure CPU, scikit-learn / xgboost / statsmodels / shap (all pre-installed). No GPU required. No network. Full analysis across 13 cancers should target < 30 minutes wall-clock.",
+      "dataset": "california_cancer_ocean",
+      "data_is_prestaged_local_csv": "Read the ABSOLUTE path /home/gdp/autoscientist/projects/california-cancer-ocean/data/analysis_dataset.csv with pandas. DO NOT call dataset_fetch/dataset_info. DO NOT download anything. The companion data/data_dictionary.md documents every column.",
+      "do_not_recompute_geography": "distance_to_ocean_km, coastal_20km, coastal_50km and dist_band are ALREADY in the file (derived from MSSA centroids vs the California coastline). Use them as-is; do NOT attempt to recompute distances or fetch shapefiles.",
+      "unit_of_analysis": "MSSA (542 areas). Ecological design - interpret at the area level only.",
+      "outcome": "AAIR (age-adjusted incidence rate per 100,000), 10-year window. LCI/UCI give the rate's 95% CI; PopTot is the underlying population.",
+      "primary_exposure": "distance_to_ocean_km (continuous). Secondary forms: coastal_20km, coastal_50km, dist_band.",
+      "cancers": ["AllSite", "Breast", "CRC", "Kidney", "Liver", "Lung", "Lymph", "Mela", "Pancreas", "Prostate", "Thyroid", "Urinary", "Uterine"],
+      "sex_strata": ["Both", "Female", "Male"],
+      "pollution_controls": ["CES_PM2.5", "CES_Ozone", "CES_Diesel_PM", "CES_Traffic", "CES_Pollution_Burden", "CES_Drinking_Water", "CES_Tox._Release", "CES_Haz._Waste", "CES_Cleanup_Sites", "CES_Groundwater_Threats"],
+      "other_confounders": ["PerSmoking", "QNSES", "PerRural", "PopAll", "MSSA_Area_SqMi", "PerWhite", "PerBlack", "PerAsian", "PerHispanic", "PerForeignBorn"],
+      "screening_confounders": ["PerMammo", "PerFOBT", "PerDocVisit"],
+      "leakage_columns_to_exclude_as_features": ["LCI", "UCI", "White_AAIR", "Black_AAIR", "Hispanic_AAIR", "Asian_AAIR", "CES_Asthma", "CES_Cardiovascular_Disease", "CES_Low_Birth_Weight", "Latitude", "Longitude", "AreaID", "Counties", "Cities", "RepCounty"],
+      "methods": ["xgboost_regression_with_shap", "permutation_importance", "multivariable_ols_wls_regression", "low_pollution_stratified_comparison", "coastal_vs_inland_tests (t-test / Mann-Whitney)"],
+      "n_seeds": 5,
+      "cv": "5-fold; ALL preprocessing (imputation, scaling) fit on the training fold only via an sklearn Pipeline",
+      "external_validation": "geographic hold-out (e.g., train Southern CA, test Northern CA) to check the distance signal generalizes spatially",
+      "primary_outputs": ["distance_effect_size_per_100km_with_95CI", "distance_shap_and_permutation_importance_rank", "low_pollution_subset_distance_effect", "per_cancer_summary_table", "share_of_raw_coastal_gap_explained_by_pollution"],
+      "max_runtime_minutes": 30
+    },
+    "ceiling": "Workshop track / short methods note: an honest ecological analysis of distance-to-ocean and California cancer incidence with explicit pollution and confounder adjustment. Not a causal-inference flagship. Per KICKOFF.md Section 1.",
+    "hard_rules": [
+      "this is an ECOLOGICAL study: never state or imply individual-level causation; phrase findings as area-level associations and name the ecological fallacy explicitly",
+      "report the distance-to-ocean effect BOTH crude and fully adjusted (pollution + smoking + SES + screening + urbanicity); the headline is how much of the crude coastal-vs-inland gap survives adjustment, per cancer",
+      "implement the Project Description's design directly: prune to low / similar-pollution MSSAs and re-test distance within that restricted, pollution-matched set",
+      "exclude leakage / definitional columns from the feature set (LCI/UCI, race-stratified AAIRs, post-hoc CES health outcomes like asthma/cardiovascular, raw lat/lon, identifiers)",
+      "AAIR is missing (small-count suppression) for ~16% of rows and more for rarer sites; disclose missingness per cancer and handle it explicitly - do not silently drop without reporting",
+      "weight or down-weight statistically unstable rates (wide LCI-UCI / small PopTot); a raw unweighted mean over MSSAs over-counts tiny, noisy areas",
+      ">= 5 seeds for XGBoost with mean +/- SD, and bootstrap or analytic 95% confidence intervals for every reported distance effect and cross-group comparison",
+      "all preprocessing fit on the training fold only (sklearn Pipeline); tune any XGBoost hyperparameters on a validation split disjoint from the test fold",
+      "acknowledge and, where feasible, test for spatial autocorrelation - neighbouring MSSAs are not independent, which inflates naive significance",
+      "run the analysis for all 13 cancer sites (incl. AllSite) and produce a single comparison table of the adjusted distance effect across sites; flag any site where distance stays a strong predictor after adjustment for interpretation",
+      "report sensitivity to the distance operationalization (continuous km vs 20km/50km binary vs bands) before claiming the result is robust"
+    ]
+  }
+}

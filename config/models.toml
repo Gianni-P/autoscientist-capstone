@@ -377,7 +377,7 @@ cost_ceiling_usd = 1.00
 # new spend is refused (KICKOFF.md §2: refuse within $5 of the cap).
 #
 [budget]
-monthly_cap_usd = 200.0  # 2026-06-19: raised 150 -> 200 (operator); ~$72 usable after $123 already spent this month
+monthly_cap_usd = 280.0  # 2026-06-24: raised 230 -> 280 (operator) for a full real-data run (california-cancer-ocean: cancer incidence vs distance-to-ocean; June MTD ~$212 spent, ~$60 headroom). 2026-06-23: raised 200 -> 230 (operator) for headroom on a full Opus-orchestrator + qwen3.6:27b demo run (June already ~$183 spent). 2026-06-19: raised 150 -> 200 (operator); ~$72 usable after $123 already spent this month
 hard_floor_buffer_usd = 5.0
 # Cumulative USD ceiling for a SINGLE agent invocation's tool-loop (the sum
 # of all rounds), enforced in runtime/runner.py:_invoke_agent. This is the

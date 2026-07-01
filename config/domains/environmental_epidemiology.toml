@@ -1,0 +1,120 @@
+# config/domains/environmental_epidemiology.toml
+# Pitfall checklist for ecological / observational environmental-epidemiology
+# studies (area-level association of an exposure with a health-outcome rate,
+# adjusting for confounders).
+#
+# Phase 5 (verify/pitfalls.py) consumes this file and runs each check against
+# pipeline state. To avoid hard-halting on a study type the registered handlers
+# were not originally written for, the substantive checks here are
+# "needs_human" (they surface a checkpoint for operator judgement) rather than
+# "fail"; only clearly-minor items are "warn". The domain-agnostic completeness
+# and provenance gates ("the verify trio") still run independently.
+#
+# IMPORTANT: every `id` below maps to an ALREADY-REGISTERED handler in
+# verify/pitfalls.py (_register_default_handlers). No new Python is required.
+#
+# Severity:
+#   "fail"         — blocks the pipeline; raises a hard halt + checkpoint.
+#   "needs_human"  — surfaces a checkpoint without halting downstream work.
+#   "warn"         — annotates the run; pipeline continues.
+
+[[checks]]
+id = "target_leakage_features_excluded"
+title = "Leakage / definitional columns excluded from the feature set"
+severity = "needs_human"
+description = """
+The outcome is AAIR. Columns that are definitions of, or deterministic
+functions of, the outcome must never be features: the rate CIs (LCI/UCI), the
+race-stratified AAIRs (White/Black/Hispanic/Asian_AAIR), and post-hoc CES
+health outcomes (asthma, cardiovascular disease, low birth weight). Raw
+latitude/longitude and identifiers must also be excluded so the model learns
+from distance-to-ocean and covariates, not from a memorized map. Confirm the
+feature list excludes these.
+"""
+
+[[checks]]
+id = "missing_data_handling_disclosed"
+title = "AAIR missingness disclosed and handled per cancer site"
+severity = "needs_human"
+description = """
+~16% of AAIR values (more for rarer sites) are suppressed small counts.
+Silent row-dropping biases the cohort toward larger, often more urban MSSAs.
+The missingness rate per cancer and the handling strategy (and any weighting
+by population / rate stability) must be disclosed.
+"""
+
+[[checks]]
+id = "confidence_intervals_reported"
+title = "Confidence intervals reported for every distance effect"
+severity = "needs_human"
+description = """
+A point estimate of the distance-to-ocean effect (regression coefficient,
+SHAP magnitude, or a coastal-vs-inland mean difference) is meaningless without
+a bootstrap or analytic 95% CI. Every reported distance effect and cross-group
+comparison must carry an interval or an equivalent paired statistical test.
+"""
+
+[[checks]]
+id = "multi_seed_reporting"
+title = "Multi-seed reporting for XGBoost (mean +/- SD over >= 5 seeds)"
+severity = "needs_human"
+description = """
+Tree ensembles and CV folds swing with the seed. Report >= 5 seeds with mean
+and SD per condition for any XGBoost importance / performance number; a single
+seed is not a result.
+"""
+params = { min_seeds = 5 }
+
+[[checks]]
+id = "hyperparameter_tuning_split"
+title = "XGBoost hyperparameters tuned on a validation split (not test)"
+severity = "needs_human"
+description = """
+Tuning XGBoost on the test fold contaminates the held-out estimate. Tuning
+must use a validation partition (or inner CV loop) disjoint from the test
+partition used to report the distance contribution.
+"""
+
+[[checks]]
+id = "preprocessing_fit_on_train_only"
+title = "Imputation / scaling fit on the training partition only"
+severity = "needs_human"
+description = """
+Fitting an imputer or scaler on the whole dataset before splitting leaks test
+information. Every preprocessing transform must be fit inside the training fold
+and merely applied to validation/test — use an sklearn Pipeline so the fit is
+fold-scoped by construction.
+"""
+
+[[checks]]
+id = "external_validation_present"
+title = "Spatial / geographic hold-out validation for any generalization claim"
+severity = "needs_human"
+description = """
+Neighbouring MSSAs are correlated, so in-distribution CV alone over-states how
+well a distance signal generalizes. A claim that distance-to-ocean predicts
+incidence should be checked on a geographically shifted partition (e.g., train
+Southern California, test Northern California), or the claim scoped accordingly.
+"""
+
+[[checks]]
+id = "counterintuitive_signs_flagged"
+title = "Counterintuitive findings flagged for interpretation"
+severity = "needs_human"
+description = """
+If distance-to-ocean remains a strong predictor after full pollution + SES +
+smoking + screening adjustment for some cancer, or flips sign between crude and
+adjusted models, that must be flagged with candidate explanations (residual
+confounding by urbanicity, screening intensity, migration, spatial
+autocorrelation) before any causal-sounding language is written.
+"""
+
+[[checks]]
+id = "class_balance_reported"
+title = "Group sizes reported for coastal-vs-inland comparisons"
+severity = "warn"
+description = """
+When the exposure is binarized (coastal_20km / coastal_50km), report the
+number of MSSAs in each group and per cancer; a lopsided split makes a
+'difference' fragile. Prefer the continuous distance analysis as primary.
+"""

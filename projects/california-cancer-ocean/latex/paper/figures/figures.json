@@ -1,0 +1,22 @@
+[
+  {
+    "path": "figures/fig1_e1_crude_vs_adjusted.png",
+    "caption": "Crude (red squares) and fully covariate-adjusted (blue/gray circles, with HC3 95% CIs) distance-to-ocean coefficients per +100 km for each cancer site; most crude associations attenuate to non-significance after adjustment, while the all-cancer association strengthens.",
+    "label": "fig:e1_crude_vs_adjusted"
+  },
+  {
+    "path": "figures/fig2_e2_falsification.png",
+    "caption": "Adjusted distance coefficients (\u00b1SE) for environment-plausible and pre-designated negative-control cancer sites; the group means are similar and the simple mean-difference and label-permutation tests are non-significant (the more powerful SUR Wald test is shown for contrast).",
+    "label": "fig:e2_falsification"
+  },
+  {
+    "path": "figures/fig3_e4_shap.png",
+    "caption": "Mean |SHAP| importance (5-seed average) of distance-to-ocean versus pollution burden, neighbourhood SES, and smoking for each cancer site; distance is a top-ranked descriptive predictor for Kidney, AllSite and Lung but is dominated by SES for Breast.",
+    "label": "fig:e4_shap"
+  },
+  {
+    "path": "figures/fig4_e3_low_pollution.png",
+    "caption": "Distance-to-ocean coefficient (per +100 km, with 95% CI) re-estimated within the bottom CES pollution-burden tertile (pollution-homogeneous MSSAs); the all-cancer coastal gradient persists while most site-specific effects are non-significant.",
+    "label": "fig:e3_low_pollution"
+  }
+]

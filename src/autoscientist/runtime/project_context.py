@@ -51,6 +51,19 @@ _DATASET_LAYOUTS: dict[str, str] = {
         "    - Labels: `padchest_meta.csv`\n"
         "    - Images: numbered subdirs `0/`, `1/`, `2/`, …"
     ),
+    # Pre-staged LOCAL tabular CSV (not an imaging archive, not fetched). Paths
+    # are ABSOLUTE so they resolve regardless of the sandbox CWD.
+    "california_cancer_ocean": (
+        "**California MSSA cancer incidence + CalEnviroScreen 4.0** — pre-staged local CSV "
+        "(do NOT fetch, do NOT recompute geography)\n"
+        "    - Analysis table (load this with pandas, ABSOLUTE path):\n"
+        "      `/home/gdp/autoscientist/projects/california-cancer-ocean/data/analysis_dataset.csv`\n"
+        "      — one row per (`AreaID`, `Cancer`, `Sex`); 13 cancer sites incl. `AllSite`; 542 MSSAs; "
+        "10-yr `AAIR` outcome; derived `distance_to_ocean_km` + `coastal_20km`/`coastal_50km`/`dist_band`; "
+        "CalEnviroScreen `CES_*` pollution; demographics; `PerSmoking`; `MSSA_Area_SqMi`.\n"
+        "    - Geography/provenance: `/home/gdp/autoscientist/projects/california-cancer-ocean/data/mssa_geography.csv`\n"
+        "    - Full column reference: `/home/gdp/autoscientist/projects/california-cancer-ocean/data/data_dictionary.md`"
+    ),
 }
 
 

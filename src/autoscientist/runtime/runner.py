@@ -126,6 +126,15 @@ def _append_user_text(messages: list[dict], provider: str, text: str) -> None:
 # index 0 is not forward. Terminal agents (peer_reviewer → DONE) are absent on
 # purpose: a missing directive there stays terminal.
 _FORWARD_TARGET: dict[str, str] = {
+    # Early linear chain. Without these, an early agent that finishes WITHOUT a
+    # `HANDOFF:` line (e.g. a verbose lit_review on a small model that hits its
+    # output-token cap mid-summary) was treated as terminal and ended the run
+    # before CP1. Forwarding carries the agent's output to the next stage; the
+    # relevant checkpoint (CP1/CP2) still gates the operator.
+    "lit_review": "idea_gen",
+    "idea_gen": "idea_critic",
+    "idea_critic": "methodology",
+    "methodology": "code_gen",
     "code_gen": "test_gen",
     "test_gen": "code_review",
     "code_review": "results_validator",

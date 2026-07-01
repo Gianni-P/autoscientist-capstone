@@ -38,6 +38,8 @@ the model — enforces the discipline.
 
 ## Architecture
 
+![autoscientist — twelve specialist agents driven through five mandatory human-in-the-loop checkpoints](docs/architecture.png)
+
 ```
 research direction
         │
